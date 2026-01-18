@@ -1,12 +1,13 @@
 import asyncio
 import logging
 import signal
-from contextlib import asynccontextmanager
+from aiohttp import web
 
 from app.config import get_settings
 from app.database import db
 from app.core.engine import MonitoringEngine
 from app.bot.handler import create_bot_application, set_engine
+from app.services.metrics import get_metrics, get_content_type
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -23,12 +24,46 @@ async def run_monitoring_engine(engine: MonitoringEngine):
         raise
 
 
+async def metrics_handler(request: web.Request) -> web.Response:
+    """Prometheus metrics endpoint."""
+    return web.Response(
+        body=get_metrics(),
+        content_type=get_content_type(),
+    )
+
+
+async def health_handler(request: web.Request) -> web.Response:
+    """Health check endpoint."""
+    return web.json_response({"status": "healthy"})
+
+
+async def run_metrics_server(host: str = "0.0.0.0", port: int = 8080):
+    """Run the metrics HTTP server."""
+    app = web.Application()
+    app.router.add_get("/metrics", metrics_handler)
+    app.router.add_get("/health", health_handler)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host, port)
+    await site.start()
+    logger.info(f"Metrics server running on http://{host}:{port}/metrics")
+    return runner
+
+
 async def main():
     logger.info("Starting DeFi Liquidation Alerter...")
+    settings = get_settings()
 
     # Initialize database
     await db.init_db()
     logger.info("Database initialized")
+
+    # Start metrics server
+    metrics_runner = await run_metrics_server(
+        host="0.0.0.0",
+        port=settings.metrics_port,
+    )
 
     # Create bot application
     application = create_bot_application()
@@ -72,6 +107,9 @@ async def main():
     await application.updater.stop()
     await application.stop()
     await application.shutdown()
+
+    # Cleanup metrics server
+    await metrics_runner.cleanup()
 
     logger.info("Shutdown complete")
 

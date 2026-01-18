@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     critical_health_factor_threshold: float = Field(
         default=1.1, description="Critical health factor threshold for urgent alerts"
     )
+    metrics_port: int = Field(
+        default=8080, description="Port for Prometheus metrics endpoint"
+    )
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

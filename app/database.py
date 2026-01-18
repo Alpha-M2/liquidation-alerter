@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, BigInteger
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, BigInteger, Boolean
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -16,6 +16,11 @@ class User(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     chat_id = Column(BigInteger, unique=True, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # User settings
+    alert_threshold = Column(Float, default=1.5)  # Health factor threshold for warnings
+    critical_threshold = Column(Float, default=1.1)  # Critical threshold
+    alerts_paused = Column(Boolean, default=False)
 
     wallets = relationship("Wallet", back_populates="user", cascade="all, delete-orphan")
 
