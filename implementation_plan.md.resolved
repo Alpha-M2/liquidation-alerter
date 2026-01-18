@@ -1,0 +1,104 @@
+# Implementation Plan - DeFi Liquidation Alerter
+
+This plan details the steps to build a production-ready Python application for monitoring DeFi positions and sending Telegram alerts.
+
+## User Review Required
+
+> [!IMPORTANT]
+> **API Keys**: The user will need to provide a Telegram Bot Token and an RPC URL (e.g., Alchemy/Infura) in the [.env](file:///Users/user/Desktop/PythonProjects/liquidation-alerter/.env) file.
+> **Database**: The plan assumes a local SQLite database for MVP simplicity, with an option to switch to PostgreSQL for production.
+> **Scope**: This plan covers Aave V3 and Compound V3 adapters for the MVP.
+
+## Proposed Changes
+
+### Project Structure
+
+We will organize the code into a modular structure to support extensibility.
+
+```
+liquidation-alerter/
+├── app/
+│   ├── __init__.py
+│   ├── config.py           # Configuration management
+│   ├── main.py             # Entry point (moved from root)
+│   ├── database.py         # Database connection and models
+│   ├── bot/
+│   │   ├── __init__.py
+│   │   ├── handler.py      # Telegram bot command handlers
+│   │   └── messages.py     # Message formatting
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── engine.py       # Main monitoring loop
+│   │   ├── health.py       # Health factor calculations
+│   │   ├── alerter.py      # Alert logic
+│   │   └── analytics.py    # Predictions and simulations
+│   ├── protocols/
+│   │   ├── __init__.py
+│   │   ├── base.py         # Abstract base class for adapters
+│   │   ├── aave_v3.py      # Aave V3 implementation
+│   │   └── compound_v3.py  # Compound V3 implementation
+│   └── services/
+│       ├── __init__.py
+│       ├── price.py        # Price fetching service
+│       └── rpc.py          # Web3 provider management
+├── tests/
+│   ├── __init__.py
+│   ├── test_health.py
+│   └── test_adapters.py
+├── .env
+├── pyproject.toml
+└── Dockerfile
+```
+
+### Dependencies
+
+We will use `uv` to manage dependencies.
+*   **Core**: `web3`, `pydantic`, `pydantic-settings`, `sqlalchemy`, `aiohttp`, `asyncpg` (if Postgres) or `aiosqlite`
+*   **Bot**: `python-telegram-bot`
+*   **Task Queue (Optional for MVP)**: `celery`, `redis` (can use `asyncio` background tasks for MVP)
+
+### Component Implementation Details
+
+#### 1. Configuration & Database (`app/config.py`, `app/database.py`)
+*   [NEW] `app/config.py`: Load env vars (TELEGRAM_TOKEN, RPC_URL, DB_URL).
+*   [NEW] `app/database.py`: SQLAlchemy models for `User` (chat_id, wallet_address) and `PositionSnapshot` (historical data).
+
+#### 2. Protocol Adapters (`app/protocols/`)
+*   [NEW] `app/protocols/base.py`: Define `ProtocolAdapter` abstract class with methods:
+    *   `get_positions(wallet_address) -> List[Position]`
+    *   `get_health_factor(wallet_address) -> float`
+    *   `get_liquidation_threshold() -> float`
+*   [NEW] `app/protocols/aave_v3.py`: Implement Aave V3 logic using the `Pool` contract to fetch user data.
+*   [NEW] `app/protocols/compound_v3.py`: Implement Compound V3 logic using `Comet` contracts.
+
+#### 3. Core Logic (`app/core/`)
+*   [NEW] `app/services/price.py`: Fetch token prices (Chainlink or Coingecko fallback).
+*   [NEW] `app/core/health.py`: Unified normalized health factor calculation (0-100 score or standard HF > 1.0).
+*   [NEW] `app/core/alerter.py`: Logic to check if (current HF < threshold) and send alerts.
+*   [NEW] `app/core/engine.py`: The `asyncio` loop that iterates through users, fetches positions, checks health, and triggers alerts.
+*   [NEW] `app/core/analytics.py`: Implement `predict_liquidation_time(position)` and `simulate_price_impact(position, percentage_change)`.
+
+#### 4. Telegram Bot (`app/bot/`)
+*   [NEW] `app/bot/handler.py`: Handlers for `/start`, `/add <wallet>`, `/status`, `/simulate <protocol> <change>`, `/help`.
+*   [NEW] `app/bot/messages.py`: Formatter for valid markdown messages with health status emojis (🟢, 🟡, 🔴).
+
+#### 5. Main Entry Point
+*   [MODIFY] [main.py](file:///Users/user/Desktop/PythonProjects/liquidation-alerter/main.py): Update to initialize the DB, start the Bot, and launch the Monitoring Engine loop.
+
+## Verification Plan
+
+### Automated Tests
+*   **Unit Tests**:
+    *   Test `health.py` logic with mock position data.
+    *   Test `ProtocolAdapter` parsing with mock RPC responses.
+*   **Command**: `pytest tests/`
+
+### Manual Verification
+1.  **Bot Interaction**:
+    *   Start the bot: `python -m app.main`
+    *   Send `/start` to the bot.
+    *   Send `/add <wallet_address>` (use a known whale address or user address with open positions).
+    *   Send `/status` and verify it returns correct position data.
+2.  **Simulation**:
+    *   Hardcode a low health factor trigger in `engine.py` to force an alert.
+    *   Verify the Telegram notification is received.
