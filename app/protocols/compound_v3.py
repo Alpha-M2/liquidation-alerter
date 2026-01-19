@@ -100,7 +100,7 @@ class CompoundV3Adapter(ProtocolAdapter):
         settings = get_settings()
 
         # Get chain-specific RPC URL from settings
-        rpc_url = getattr(settings, f"{self._chain}_rpc_url", None) or settings.rpc_url
+        rpc_url = settings.get_rpc_url(self._chain)
 
         if web3:
             self._web3 = web3

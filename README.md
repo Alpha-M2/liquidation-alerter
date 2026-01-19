@@ -60,7 +60,7 @@ This application helps users avoid liquidation by:
 liquidation-alerter/
 ├── app/
 │   ├── main.py                 # Application entry point
-│   ├── config.py               # Pydantic settings with multi-chain RPC support
+│   ├── config.py               # Pydantic settings with chain-specific RPC URLs
 │   ├── database.py             # SQLAlchemy async ORM models
 │   │
 │   ├── core/
@@ -130,7 +130,7 @@ docker build -t liquidation-alerter .
 docker run -d \
   --name liquidation-alerter \
   -e TELEGRAM_BOT_TOKEN=your_token \
-  -e RPC_URL=https://eth-mainnet.g.alchemy.com/v2/your_key \
+  -e ETHEREUM_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/your_key \
   -e ARBITRUM_RPC_URL=https://arb-mainnet.g.alchemy.com/v2/your_key \
   -e BASE_RPC_URL=https://base-mainnet.g.alchemy.com/v2/your_key \
   -e OPTIMISM_RPC_URL=https://opt-mainnet.g.alchemy.com/v2/your_key \
@@ -138,32 +138,14 @@ docker run -d \
   liquidation-alerter
 ```
 
-## Configuration
-
-All configuration is done via environment variables (or a `.env` file):
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Yes | - | Telegram Bot API token |
-| `RPC_URL` | Yes | - | Primary Ethereum RPC URL |
-| `ETHEREUM_RPC_URL` | No | `RPC_URL` | Ethereum mainnet RPC |
-| `ARBITRUM_RPC_URL` | No | `RPC_URL` | Arbitrum One RPC |
-| `BASE_RPC_URL` | No | `RPC_URL` | Base RPC |
-| `OPTIMISM_RPC_URL` | No | `RPC_URL` | Optimism RPC |
-| `DATABASE_URL` | No | `sqlite+aiosqlite:///./liquidation_alerter.db` | Database URL |
-| `MONITORING_INTERVAL_SECONDS` | No | `60` | Seconds between checks |
-| `HEALTH_FACTOR_THRESHOLD` | No | `1.5` | Warning threshold |
-| `CRITICAL_HEALTH_FACTOR_THRESHOLD` | No | `1.1` | Critical threshold |
-| `METRICS_PORT` | No | `8080` | Prometheus metrics port |
-
 ### Example `.env` file
 
 ```env
 # Required
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token
-RPC_URL=https://eth-mainnet.g.alchemy.com/v2/your-api-key
 
-# Optional - Chain-specific RPCs (recommended for production)
+# Chain-specific RPC URLs (ETHEREUM_RPC_URL is required)
+ETHEREUM_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/your-api-key
 ARBITRUM_RPC_URL=https://arb-mainnet.g.alchemy.com/v2/your-api-key
 BASE_RPC_URL=https://base-mainnet.g.alchemy.com/v2/your-api-key
 OPTIMISM_RPC_URL=https://opt-mainnet.g.alchemy.com/v2/your-api-key
