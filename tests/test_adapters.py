@@ -14,10 +14,29 @@ class TestAaveV3Adapter:
 
     @pytest.fixture
     def adapter(self, mock_web3):
-        return AaveV3Adapter(web3=mock_web3)
+        return AaveV3Adapter(chain="ethereum", web3=mock_web3)
 
-    def test_name(self, adapter):
-        assert adapter.name == "Aave V3"
+    def test_name_ethereum(self, adapter):
+        assert adapter.name == "Aave V3 (Ethereum)"
+
+    def test_name_arbitrum(self, mock_web3):
+        adapter = AaveV3Adapter(chain="arbitrum", web3=mock_web3)
+        assert adapter.name == "Aave V3 (Arbitrum)"
+
+    def test_name_base(self, mock_web3):
+        adapter = AaveV3Adapter(chain="base", web3=mock_web3)
+        assert adapter.name == "Aave V3 (Base)"
+
+    def test_name_optimism(self, mock_web3):
+        adapter = AaveV3Adapter(chain="optimism", web3=mock_web3)
+        assert adapter.name == "Aave V3 (Optimism)"
+
+    def test_chain_property(self, adapter):
+        assert adapter.chain == "ethereum"
+
+    def test_unsupported_chain(self, mock_web3):
+        with pytest.raises(ValueError, match="Unsupported chain"):
+            AaveV3Adapter(chain="polygon", web3=mock_web3)
 
     @pytest.mark.asyncio
     async def test_get_position_with_data(self, adapter):
@@ -44,7 +63,7 @@ class TestAaveV3Adapter:
         )
 
         assert position is not None
-        assert position.protocol == "Aave V3"
+        assert position.protocol == "Aave V3 (Ethereum)"
         assert position.total_collateral_usd == 1000.0
         assert position.total_debt_usd == 500.0
         assert position.health_factor == 2.0
@@ -97,10 +116,29 @@ class TestCompoundV3Adapter:
 
     @pytest.fixture
     def adapter(self, mock_web3):
-        return CompoundV3Adapter(web3=mock_web3)
+        return CompoundV3Adapter(chain="ethereum", web3=mock_web3)
 
-    def test_name(self, adapter):
-        assert adapter.name == "Compound V3"
+    def test_name_ethereum(self, adapter):
+        assert adapter.name == "Compound V3 (Ethereum)"
+
+    def test_name_arbitrum(self, mock_web3):
+        adapter = CompoundV3Adapter(chain="arbitrum", web3=mock_web3)
+        assert adapter.name == "Compound V3 (Arbitrum)"
+
+    def test_name_base(self, mock_web3):
+        adapter = CompoundV3Adapter(chain="base", web3=mock_web3)
+        assert adapter.name == "Compound V3 (Base)"
+
+    def test_name_optimism(self, mock_web3):
+        adapter = CompoundV3Adapter(chain="optimism", web3=mock_web3)
+        assert adapter.name == "Compound V3 (Optimism)"
+
+    def test_chain_property(self, adapter):
+        assert adapter.chain == "ethereum"
+
+    def test_unsupported_chain(self, mock_web3):
+        with pytest.raises(ValueError, match="Unsupported chain"):
+            CompoundV3Adapter(chain="polygon", web3=mock_web3)
 
     @pytest.mark.asyncio
     async def test_is_liquidatable(self, adapter):

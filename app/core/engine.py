@@ -10,11 +10,7 @@ from app.config import get_settings
 from app.database import db, User, Wallet, PositionSnapshot
 from app.protocols.base import ProtocolAdapter, Position
 from app.protocols.aave_v3 import AaveV3Adapter
-from app.protocols.aave_v2 import AaveV2Adapter
 from app.protocols.compound_v3 import CompoundV3Adapter
-from app.protocols.compound_v2 import CompoundV2Adapter
-from app.protocols.maker import MakerDAOAdapter
-from app.protocols.morpho import MorphoAdapter
 from app.core.health import assess_health
 from app.core.alerter import GasAwareAlerter
 from app.core.cascade import get_cascade_detector, CascadeAlert
@@ -30,12 +26,16 @@ class MonitoringEngine:
         self._alerter = GasAwareAlerter(bot)
         self._price_service = MultiSourcePriceService()
         self._adapters: List[ProtocolAdapter] = [
-            AaveV3Adapter(),
-            AaveV2Adapter(),
-            CompoundV3Adapter(),
-            CompoundV2Adapter(),
-            MakerDAOAdapter(),
-            MorphoAdapter(),
+            # Aave V3 adapters for each chain
+            AaveV3Adapter(chain="ethereum"),
+            AaveV3Adapter(chain="arbitrum"),
+            AaveV3Adapter(chain="base"),
+            AaveV3Adapter(chain="optimism"),
+            # Compound V3 adapters for each chain
+            CompoundV3Adapter(chain="ethereum"),
+            CompoundV3Adapter(chain="arbitrum"),
+            CompoundV3Adapter(chain="base"),
+            CompoundV3Adapter(chain="optimism"),
         ]
         self._running = False
         self._settings = get_settings()

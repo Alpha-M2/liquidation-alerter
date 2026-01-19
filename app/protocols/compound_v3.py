@@ -1,10 +1,16 @@
-from web3 import AsyncWeb3
+from web3 import AsyncWeb3, AsyncHTTPProvider
+from web3.eth import AsyncEth
 
-from app.protocols.base import ProtocolAdapter, Position, Asset
-from app.services.rpc import get_web3
+from app.protocols.base import ProtocolAdapter, Position
+from app.config import get_settings
 
-# Compound V3 USDC Comet on Ethereum Mainnet
-COMPOUND_V3_COMET_USDC = "0xc3d688B66703497DAA19211EEdff47f25384cdc3"
+# Compound V3 Comet USDC addresses per chain
+COMPOUND_V3_COMET_ADDRESSES = {
+    "ethereum": "0xc3d688B66703497DAA19211EEdff47f25384cdc3",
+    "arbitrum": "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf",
+    "base": "0xb125E6687d4313864e53df431d5425969c15Eb2F",
+    "optimism": "0x2e44e174f7D53F0212823acC11C01A11d58c5bCB",
+}
 
 COMET_ABI = [
     {
@@ -86,17 +92,38 @@ COMET_ABI = [
 
 
 class CompoundV3Adapter(ProtocolAdapter):
-    def __init__(self, web3: AsyncWeb3 | None = None, comet_address: str = COMPOUND_V3_COMET_USDC):
-        self._web3 = web3 or get_web3()
-        self._comet_address = comet_address
+    def __init__(self, chain: str = "ethereum", web3: AsyncWeb3 | None = None, comet_address: str | None = None):
+        self._chain = chain.lower()
+        if self._chain not in COMPOUND_V3_COMET_ADDRESSES:
+            raise ValueError(f"Unsupported chain: {chain}. Supported: {list(COMPOUND_V3_COMET_ADDRESSES.keys())}")
+
+        settings = get_settings()
+
+        # Get chain-specific RPC URL from settings
+        rpc_url = getattr(settings, f"{self._chain}_rpc_url", None) or settings.rpc_url
+
+        if web3:
+            self._web3 = web3
+        else:
+            self._web3 = AsyncWeb3(
+                AsyncHTTPProvider(rpc_url),
+                modules={"eth": (AsyncEth,)},
+            )
+
+        self._comet_address = comet_address or COMPOUND_V3_COMET_ADDRESSES[self._chain]
         self._comet_contract = self._web3.eth.contract(
-            address=AsyncWeb3.to_checksum_address(comet_address),
+            address=AsyncWeb3.to_checksum_address(self._comet_address),
             abi=COMET_ABI,
         )
 
     @property
     def name(self) -> str:
-        return "Compound V3"
+        chain_display = self._chain.capitalize()
+        return f"Compound V3 ({chain_display})"
+
+    @property
+    def chain(self) -> str:
+        return self._chain
 
     async def get_position(self, wallet_address: str) -> Position | None:
         try:
@@ -156,7 +183,7 @@ class CompoundV3Adapter(ProtocolAdapter):
                 total_collateral_usd=total_collateral_usd + supply_balance_usd,
                 total_debt_usd=borrow_balance_usd,
                 liquidation_threshold=avg_liquidation_factor,
-                available_borrows_usd=0.0,  # Would need additional calculation
+                available_borrows_usd=0.0,
             )
         except Exception:
             return None

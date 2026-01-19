@@ -1,9 +1,16 @@
-from web3 import AsyncWeb3
+from web3 import AsyncWeb3, AsyncHTTPProvider
+from web3.eth import AsyncEth
 
-from app.protocols.base import ProtocolAdapter, Position, Asset
-from app.services.rpc import get_web3
+from app.protocols.base import ProtocolAdapter, Position
+from app.config import get_settings
 
-AAVE_V3_POOL_ADDRESS = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
+# Aave V3 Pool addresses per chain
+AAVE_V3_POOL_ADDRESSES = {
+    "ethereum": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
+    "arbitrum": "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+    "base": "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
+    "optimism": "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+}
 
 POOL_ABI = [
     {
@@ -24,16 +31,38 @@ POOL_ABI = [
 
 
 class AaveV3Adapter(ProtocolAdapter):
-    def __init__(self, web3: AsyncWeb3 | None = None):
-        self._web3 = web3 or get_web3()
+    def __init__(self, chain: str = "ethereum", web3: AsyncWeb3 | None = None):
+        self._chain = chain.lower()
+        if self._chain not in AAVE_V3_POOL_ADDRESSES:
+            raise ValueError(f"Unsupported chain: {chain}. Supported: {list(AAVE_V3_POOL_ADDRESSES.keys())}")
+
+        settings = get_settings()
+
+        # Get chain-specific RPC URL from settings
+        rpc_url = getattr(settings, f"{self._chain}_rpc_url", None) or settings.rpc_url
+
+        if web3:
+            self._web3 = web3
+        else:
+            self._web3 = AsyncWeb3(
+                AsyncHTTPProvider(rpc_url),
+                modules={"eth": (AsyncEth,)},
+            )
+
+        pool_address = AAVE_V3_POOL_ADDRESSES[self._chain]
         self._pool_contract = self._web3.eth.contract(
-            address=AsyncWeb3.to_checksum_address(AAVE_V3_POOL_ADDRESS),
+            address=AsyncWeb3.to_checksum_address(pool_address),
             abi=POOL_ABI,
         )
 
     @property
     def name(self) -> str:
-        return "Aave V3"
+        chain_display = self._chain.capitalize()
+        return f"Aave V3 ({chain_display})"
+
+    @property
+    def chain(self) -> str:
+        return self._chain
 
     async def get_position(self, wallet_address: str) -> Position | None:
         try:
@@ -55,7 +84,7 @@ class AaveV3Adapter(ProtocolAdapter):
                 protocol=self.name,
                 wallet_address=wallet_address,
                 health_factor=health_factor,
-                collateral_assets=[],  # Simplified - would need additional calls for detailed breakdown
+                collateral_assets=[],
                 debt_assets=[],
                 total_collateral_usd=total_collateral_base,
                 total_debt_usd=total_debt_base,

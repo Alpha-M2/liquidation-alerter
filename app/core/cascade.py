@@ -20,21 +20,13 @@ logger = logging.getLogger(__name__)
 
 
 # Liquidation event signatures (keccak256 hash of event signature)
+# Note: Cascade detection currently monitors Ethereum mainnet only
+# Multi-chain cascade detection would require RPC endpoints for each chain
 LIQUIDATION_EVENTS = {
-    "Aave V2": {
-        "address": "0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9",
-        "topic": "0xe413a321e8681d831f4dbccbca790d2952b56f977908e45be37335533e005286",
-        "name": "LiquidationCall",
-    },
-    "Aave V3": {
+    "Aave V3 (Ethereum)": {
         "address": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
         "topic": "0xe413a321e8681d831f4dbccbca790d2952b56f977908e45be37335533e005286",
         "name": "LiquidationCall",
-    },
-    "Compound V2": {
-        "address": "0x3d9819210A31b4961b30EF54bE2aeD79B9c9Cd3B",
-        "topic": "0x298637f684da70674f26509b10f07ec2fbc77a335ab1e7d6215a4b2484d8bb52",
-        "name": "LiquidateBorrow",
     },
 }
 

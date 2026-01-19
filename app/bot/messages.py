@@ -10,13 +10,14 @@ from app.core.analytics import PriceSimulation, LiquidationPrediction
 
 # Protocol deep links
 PROTOCOL_URLS = {
-    "Aave V2": "https://app.aave.com/#/dashboard",
-    "Aave V3": "https://app.aave.com/",
-    "Compound V2": "https://app.compound.finance/",
-    "Compound V3": "https://app.compound.finance/",
-    "MakerDAO": "https://summer.fi/",
-    "Morpho Blue": "https://app.morpho.org/",
-    "Morpho Aave V2": "https://aavev2.morpho.org/",
+    "Aave V3 (Ethereum)": "https://app.aave.com/",
+    "Aave V3 (Arbitrum)": "https://app.aave.com/?marketName=proto_arbitrum_v3",
+    "Aave V3 (Base)": "https://app.aave.com/?marketName=proto_base_v3",
+    "Aave V3 (Optimism)": "https://app.aave.com/?marketName=proto_optimism_v3",
+    "Compound V3 (Ethereum)": "https://app.compound.finance/",
+    "Compound V3 (Arbitrum)": "https://app.compound.finance/?market=usdc-arbitrum",
+    "Compound V3 (Base)": "https://app.compound.finance/?market=usdc-base",
+    "Compound V3 (Optimism)": "https://app.compound.finance/?market=usdc-optimism",
 }
 
 
@@ -208,10 +209,8 @@ I'll help you monitor your DeFi positions and alert you before liquidation.
 /help - Show this help message
 
 *Supported Protocols:*
-• Aave V2 & V3
-• Compound V2 & V3
-• MakerDAO
-• Morpho Blue
+• Aave V3 (Ethereum, Arbitrum, Base, Optimism)
+• Compound V3 (Ethereum, Arbitrum, Base, Optimism)
 
 Get started by adding a wallet with /add
 """.strip()
@@ -223,20 +222,19 @@ def format_help_message() -> str:
 
 def format_protocols_list() -> str:
     return """
-*Supported Protocols:*
+*Supported Protocols & Chains:*
 
-🔵 *Aave V2* - [app.aave.com](https://app.aave.com/#/dashboard)
-🔵 *Aave V3* - [app.aave.com](https://app.aave.com/)
+🔵 *Aave V3*
+  • Ethereum - [app.aave.com](https://app.aave.com/)
+  • Arbitrum - [app.aave.com](https://app.aave.com/?marketName=proto_arbitrum_v3)
+  • Base - [app.aave.com](https://app.aave.com/?marketName=proto_base_v3)
+  • Optimism - [app.aave.com](https://app.aave.com/?marketName=proto_optimism_v3)
 
-🟢 *Compound V2* - [app.compound.finance](https://app.compound.finance/)
-🟢 *Compound V3* - [app.compound.finance](https://app.compound.finance/)
-
-🟣 *MakerDAO* - [summer.fi](https://summer.fi/)
-
-⚪ *Morpho Blue* - [app.morpho.org](https://app.morpho.org/)
-⚪ *Morpho Aave V2* - [aavev2.morpho.org](https://aavev2.morpho.org/)
-
-All protocols on Ethereum Mainnet.
+🟢 *Compound V3*
+  • Ethereum - [app.compound.finance](https://app.compound.finance/)
+  • Arbitrum - [app.compound.finance](https://app.compound.finance/?market=usdc-arbitrum)
+  • Base - [app.compound.finance](https://app.compound.finance/?market=usdc-base)
+  • Optimism - [app.compound.finance](https://app.compound.finance/?market=usdc-optimism)
 """.strip()
 
 
