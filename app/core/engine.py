@@ -534,6 +534,7 @@ class MonitoringEngine:
                 logger.error(f"Failed to send cascade alert: {e}")
 
     async def get_positions_for_wallet(self, wallet_address: str) -> List[Position]:
+        """Get basic positions for a wallet across all protocols."""
         positions = []
         for adapter in self._adapters:
             try:
@@ -542,6 +543,29 @@ class MonitoringEngine:
                     positions.append(position)
             except Exception as e:
                 logger.error(f"Error fetching position from {adapter.name}: {e}")
+        return positions
+
+    async def get_detailed_positions_for_wallet(self, wallet_address: str) -> List[Position]:
+        """Get detailed positions with per-asset breakdown for a wallet.
+
+        Returns positions with collateral_assets and debt_assets populated.
+        Falls back to basic position if detailed fetching fails.
+        """
+        positions = []
+        for adapter in self._adapters:
+            try:
+                position = await adapter.get_detailed_position(wallet_address)
+                if position:
+                    positions.append(position)
+            except Exception as e:
+                logger.error(f"Error fetching detailed position from {adapter.name}: {e}")
+                # Try fallback to basic position
+                try:
+                    position = await adapter.get_position(wallet_address)
+                    if position:
+                        positions.append(position)
+                except Exception:
+                    pass
         return positions
 
     def get_adapters(self) -> List[ProtocolAdapter]:

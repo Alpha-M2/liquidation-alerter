@@ -26,6 +26,7 @@ from app.bot.messages import (
     format_no_wallets,
     format_no_positions,
     format_position_status,
+    format_detailed_position_status,
     format_simulation_results,
     format_prediction,
     format_protocols_list,
@@ -225,6 +226,65 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 critical_threshold=critical_threshold,
             )
             messages.append(format_position_status(position, assessment))
+
+    # Add unified health score if multiple positions
+    if len(all_positions) > 1:
+        unified = calculate_unified_health_score(all_positions)
+        messages.insert(0, format_unified_health_score(unified))
+
+    response = "\n\n---\n\n".join(messages) if messages else format_no_wallets()
+    await update.message.reply_text(response, parse_mode="Markdown", disable_web_page_preview=True)
+
+
+async def detail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show detailed position breakdown with per-asset information."""
+    chat_id = update.effective_chat.id
+
+    async with db.async_session() as session:
+        result = await session.execute(select(User).where(User.chat_id == chat_id))
+        user = result.scalar_one_or_none()
+
+        if not user:
+            await update.message.reply_text(format_no_wallets(), parse_mode="Markdown")
+            return
+
+        result = await session.execute(
+            select(Wallet).where(Wallet.user_id == user.id)
+        )
+        wallets = result.scalars().all()
+
+        if not wallets:
+            await update.message.reply_text(format_no_wallets(), parse_mode="Markdown")
+            return
+
+        # Get user thresholds
+        warning_threshold = user.alert_threshold or 1.5
+        critical_threshold = user.critical_threshold or 1.1
+
+    if not _engine:
+        await update.message.reply_text("Monitoring engine not initialized.")
+        return
+
+    all_positions = []
+    messages = []
+
+    for wallet in wallets:
+        # Use detailed positions
+        positions = await _engine.get_detailed_positions_for_wallet(wallet.address)
+
+        if not positions:
+            messages.append(format_no_positions(wallet.address))
+            continue
+
+        for position in positions:
+            all_positions.append(position)
+            assessment = assess_health(
+                position,
+                warning_threshold=warning_threshold,
+                critical_threshold=critical_threshold,
+            )
+            # Use detailed formatting
+            messages.append(format_detailed_position_status(position, assessment))
 
     # Add unified health score if multiple positions
     if len(all_positions) > 1:
@@ -507,6 +567,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("add", add_command))
     application.add_handler(CommandHandler("remove", remove_command))
     application.add_handler(CommandHandler("status", status_command))
+    application.add_handler(CommandHandler("detail", detail_command))
     application.add_handler(CommandHandler("simulate", simulate_command))
     application.add_handler(CommandHandler("protocols", protocols_command))
     application.add_handler(CommandHandler("set_threshold", set_threshold_command))

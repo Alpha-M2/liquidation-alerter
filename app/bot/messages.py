@@ -1,12 +1,49 @@
-from typing import List
+from typing import List, Union
 
-from app.protocols.base import Position
+from app.protocols.base import Position, CollateralAsset, DebtAsset
 from app.core.health import (
     HealthAssessment,
     HealthStatus,
     UnifiedHealthScore,
 )
 from app.core.analytics import PriceSimulation, LiquidationPrediction
+
+# Token emoji mappings for visual distinction
+TOKEN_EMOJIS = {
+    # Stablecoins
+    "USDC": "💵",
+    "USDC.e": "💵",
+    "USDT": "💵",
+    "DAI": "💵",
+    "FRAX": "💵",
+    "LUSD": "💵",
+    # ETH & derivatives
+    "ETH": "💎",
+    "WETH": "💎",
+    "stETH": "💎",
+    "wstETH": "💎",
+    "rETH": "💎",
+    "cbETH": "💎",
+    # BTC
+    "BTC": "🪙",
+    "WBTC": "🪙",
+    # DeFi governance
+    "LINK": "🔗",
+    "UNI": "🦄",
+    "AAVE": "👻",
+    "COMP": "🏦",
+    "CRV": "🔶",
+    "MKR": "🏛️",
+    # Chain tokens
+    "ARB": "🔵",
+    "OP": "🔴",
+}
+
+
+def get_token_emoji(symbol: str) -> str:
+    """Get emoji for a token symbol, or default circle."""
+    return TOKEN_EMOJIS.get(symbol, "⚪")
+
 
 # Protocol deep links
 PROTOCOL_URLS = {
@@ -74,6 +111,157 @@ _{assessment.message}_
     if include_recommendations and assessment.recommendations:
         msg += "\n\n*Suggested Actions:*"
         for rec in assessment.recommendations[:2]:  # Show top 2
+            msg += f"\n• {rec.description}"
+
+    # Add deep link
+    msg += f"\n\n[Open {position.protocol}]({protocol_url})"
+
+    return msg
+
+
+def format_apy(apy: float | None) -> str:
+    """Format APY as percentage string."""
+    if apy is None:
+        return "-"
+    # APY is stored as decimal (0.032 = 3.2%)
+    return f"{apy * 100:.2f}%"
+
+
+def format_token_balance(balance: float, symbol: str) -> str:
+    """Format token balance with appropriate precision."""
+    if balance >= 1000:
+        return f"{balance:,.2f} {symbol}"
+    elif balance >= 1:
+        return f"{balance:.4f} {symbol}"
+    elif balance >= 0.0001:
+        return f"{balance:.6f} {symbol}"
+    else:
+        return f"{balance:.8f} {symbol}"
+
+
+def format_collateral_asset(asset: CollateralAsset) -> str:
+    """Format a single collateral asset line for display."""
+    emoji = get_token_emoji(asset.symbol)
+    collateral_flag = "🔒" if asset.is_collateral_enabled else "📥"
+
+    # Build the main line
+    line = f"{emoji} *{asset.symbol}* {collateral_flag}"
+    line += f"\n   {format_token_balance(asset.balance, asset.symbol)} ({format_usd(asset.balance_usd)})"
+
+    # Add details
+    details = []
+    if asset.is_collateral_enabled:
+        details.append(f"LTV: {asset.ltv:.0%}")
+        details.append(f"Liq: {asset.liquidation_threshold:.0%}")
+    if asset.supply_apy is not None and asset.supply_apy > 0:
+        details.append(f"APY: +{format_apy(asset.supply_apy)}")
+
+    if details:
+        line += f"\n   _{', '.join(details)}_"
+
+    return line
+
+
+def format_debt_asset(asset: DebtAsset) -> str:
+    """Format a single debt asset line for display."""
+    emoji = get_token_emoji(asset.symbol)
+    rate_mode = "📊" if asset.interest_rate_mode == "variable" else "📌"
+
+    # Build the main line
+    line = f"{emoji} *{asset.symbol}* {rate_mode}"
+    line += f"\n   {format_token_balance(asset.balance, asset.symbol)} ({format_usd(asset.balance_usd)})"
+
+    # Add details
+    details = []
+    details.append(f"{asset.interest_rate_mode.title()}")
+    if asset.borrow_apy > 0:
+        details.append(f"APY: -{format_apy(asset.borrow_apy)}")
+
+    if details:
+        line += f"\n   _{', '.join(details)}_"
+
+    return line
+
+
+def format_collateral_assets(assets: List[CollateralAsset]) -> str:
+    """Format list of collateral assets for display."""
+    if not assets:
+        return "_No collateral assets_"
+
+    lines = []
+    for asset in assets:
+        lines.append(format_collateral_asset(asset))
+
+    return "\n".join(lines)
+
+
+def format_debt_assets(assets: List[DebtAsset]) -> str:
+    """Format list of debt assets for display."""
+    if not assets:
+        return "_No debt_"
+
+    lines = []
+    for asset in assets:
+        lines.append(format_debt_asset(asset))
+
+    return "\n".join(lines)
+
+
+def format_detailed_position_status(
+    position: Position,
+    assessment: HealthAssessment,
+    include_recommendations: bool = True,
+) -> str:
+    """Format detailed position status with per-asset breakdown.
+
+    Shows individual collateral and debt assets with their balances,
+    APYs, and risk parameters.
+    """
+    emoji = get_status_emoji(assessment.status)
+    short_addr = f"{position.wallet_address[:6]}...{position.wallet_address[-4:]}"
+    protocol_url = get_protocol_url(position.protocol)
+
+    # Header with health factor
+    msg = f"{emoji} *{position.protocol}* | `{short_addr}`\n\n"
+    msg += f"*Health Factor:* {format_health_factor(position.health_factor)}"
+    msg += f" | *Status:* {assessment.status.value.title()}\n"
+
+    # Net APY if available
+    if position.net_apy is not None:
+        net_apy_str = f"+{format_apy(position.net_apy)}" if position.net_apy >= 0 else f"{format_apy(position.net_apy)}"
+        msg += f"*Net APY:* {net_apy_str}\n"
+
+    msg += "\n"
+
+    # Collateral section
+    if position.collateral_assets:
+        msg += f"*📥 Collateral* ({format_usd(position.total_collateral_usd)})\n"
+        msg += format_collateral_assets(position.collateral_assets)
+        msg += "\n\n"
+    else:
+        msg += f"*Collateral:* {format_usd(position.total_collateral_usd)}\n\n"
+
+    # Debt section
+    if position.debt_assets:
+        msg += f"*📤 Debt* ({format_usd(position.total_debt_usd)})\n"
+        msg += format_debt_assets(position.debt_assets)
+        msg += "\n\n"
+    else:
+        msg += f"*Debt:* {format_usd(position.total_debt_usd)}\n\n"
+
+    # Summary line
+    msg += f"*Liq. Threshold:* {position.liquidation_threshold:.0%}"
+    if position.available_borrows_usd > 0:
+        msg += f" | *Available:* {format_usd(position.available_borrows_usd)}"
+    msg += "\n"
+
+    # Assessment message
+    msg += f"\n_{assessment.message}_"
+
+    # Add recommendations if available
+    if include_recommendations and assessment.recommendations:
+        msg += "\n\n*Suggested Actions:*"
+        for rec in assessment.recommendations[:2]:
             msg += f"\n• {rec.description}"
 
     # Add deep link
@@ -200,6 +388,7 @@ I'll help you monitor your DeFi positions and alert you before liquidation.
 /add `<wallet>` - Add a wallet to monitor
 /remove `<wallet>` - Remove a wallet
 /status - View all your positions
+/detail - View detailed breakdown with per-asset info
 /simulate `<change%>` - Simulate price impact
 /set\\_threshold `<value>` - Set alert threshold (default: 1.5)
 /protocols - View supported protocols
