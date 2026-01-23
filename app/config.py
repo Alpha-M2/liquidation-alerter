@@ -1,3 +1,10 @@
+"""Application configuration using Pydantic settings.
+
+This module defines all configuration options for the DeFi Liquidation Alerter,
+including RPC URLs, database settings, and alert thresholds. Configuration
+values are loaded from environment variables and .env files.
+"""
+
 from pydantic_settings import BaseSettings
 from pydantic import Field, model_validator
 from functools import lru_cache

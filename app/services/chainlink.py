@@ -1,3 +1,9 @@
+"""Chainlink price oracle integration.
+
+This module provides access to Chainlink price feeds on Ethereum mainnet
+for reliable, decentralized price data with staleness detection.
+"""
+
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta

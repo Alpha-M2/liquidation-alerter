@@ -1,3 +1,10 @@
+"""SQLAlchemy database models and session management.
+
+This module defines the database schema for the DeFi Liquidation Alerter,
+including User, Wallet, and PositionSnapshot models. It uses SQLAlchemy
+with async support for non-blocking database operations.
+"""
+
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, BigInteger, Boolean
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker

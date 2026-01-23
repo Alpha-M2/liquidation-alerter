@@ -1,3 +1,9 @@
+"""Base protocol adapter interface and data models.
+
+This module defines the abstract interface for protocol adapters (Aave, Compound)
+and the data models for representing lending positions with collateral and debt.
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

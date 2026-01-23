@@ -1,4 +1,11 @@
-from typing import List, Union
+"""Message formatting utilities for Telegram bot responses.
+
+This module provides functions to format position data, alerts, and other
+information into Telegram-friendly Markdown messages with proper escaping
+and visual formatting using emojis.
+"""
+
+from typing import List
 
 from app.protocols.base import Position, CollateralAsset, DebtAsset
 from app.core.health import (

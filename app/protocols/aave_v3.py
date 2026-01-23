@@ -1,3 +1,10 @@
+"""Aave V3 protocol adapter for multi-chain position monitoring.
+
+This module implements the ProtocolAdapter interface for Aave V3, supporting
+Ethereum, Arbitrum, Base, and Optimism. It fetches position data including
+per-asset collateral and debt breakdowns with APYs using the UiPoolDataProvider.
+"""
+
 import logging
 from typing import Dict, List, Any
 

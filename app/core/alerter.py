@@ -1,7 +1,14 @@
+"""Gas-aware alert system with deterioration detection.
+
+This module implements the alerting logic for the DeFi Liquidation Alerter,
+including smart cooldown periods, gas cost awareness, and rapid health
+factor deterioration detection to prevent spam while ensuring timely alerts.
+"""
+
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, List
+from typing import Dict
 from collections import deque
 
 from telegram import Bot
@@ -38,13 +45,11 @@ class HealthHistory:
 
         cutoff = datetime.utcnow() - timedelta(minutes=window_minutes)
         old_hf = None
-        old_time = None
 
         for i, (ts, hf) in enumerate(zip(self.timestamps, self.health_factors)):
             if ts >= cutoff:
                 if i > 0:
                     old_hf = self.health_factors[i - 1]
-                    old_time = self.timestamps[i - 1]
                 break
 
         if old_hf is None or old_hf == 0:

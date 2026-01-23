@@ -1,8 +1,13 @@
+"""Position analytics and liquidation prediction.
+
+This module provides simulation and stress testing capabilities for DeFi
+positions, including price impact analysis and liquidation risk prediction.
+"""
+
 from dataclasses import dataclass
 from typing import List
 
 from app.protocols.base import Position
-from app.database import PositionSnapshot
 
 
 @dataclass
@@ -64,7 +69,6 @@ def calculate_liquidation_price_drop(position: Position) -> float | None:
 
 def predict_liquidation(
     position: Position,
-    historical_snapshots: List[PositionSnapshot] | None = None,
 ) -> LiquidationPrediction:
     price_drop = calculate_liquidation_price_drop(position)
 

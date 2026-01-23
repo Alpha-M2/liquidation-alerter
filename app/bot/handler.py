@@ -1,3 +1,10 @@
+"""Telegram bot command handlers for the DeFi Liquidation Alerter.
+
+This module implements all Telegram bot commands including wallet management,
+position status, simulations, and user preferences. Commands are registered
+with the python-telegram-bot framework.
+"""
+
 import csv
 import io
 import logging

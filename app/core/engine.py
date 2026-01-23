@@ -1,3 +1,11 @@
+"""Core monitoring engine for DeFi position tracking.
+
+This module implements the main monitoring loop that periodically checks
+positions across all configured protocols and chains. It uses smart polling
+to adjust check frequency based on position risk levels and includes
+reorg protection to prevent false alerts.
+"""
+
 import asyncio
 import logging
 import time
@@ -13,13 +21,13 @@ from app.config import get_settings
 from app.database import db, User, Wallet, PositionSnapshot
 from app.protocols.base import ProtocolAdapter, Position
 from app.protocols.aave_v3 import AaveV3Adapter, AAVE_V3_POOL_ADDRESSES
-from app.protocols.compound_v3 import CompoundV3Adapter, COMPOUND_V3_COMET_ADDRESSES
+from app.protocols.compound_v3 import CompoundV3Adapter
 from app.core.health import assess_health
 from app.core.alerter import GasAwareAlerter
 from app.core.cascade import get_cascade_detector, CascadeAlert
 from app.services.price import MultiSourcePriceService
-from app.services.multicall import MulticallService, BatchPositionFetcher
-from app.services.reorg import get_reorg_tracker, ReorgSafeStateTracker
+from app.services.multicall import BatchPositionFetcher
+from app.services.reorg import get_reorg_tracker
 from app.bot.messages import format_liquidation_cascade_warning
 
 logger = logging.getLogger(__name__)
@@ -137,8 +145,6 @@ class SmartPollingManager:
 
     def get_stats(self) -> Dict[str, any]:
         """Get polling statistics."""
-        now = time.time()
-
         critical_count = 0
         medium_count = 0
         low_count = 0

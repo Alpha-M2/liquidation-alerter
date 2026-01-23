@@ -1,3 +1,9 @@
+"""RPC provider with fallback and rate limiting.
+
+This module provides a robust Web3 RPC provider with automatic failover
+between multiple endpoints, rate limiting, and call tracking for monitoring.
+"""
+
 import asyncio
 import logging
 import time

@@ -1,3 +1,10 @@
+"""Compound V3 (Comet) protocol adapter for multi-chain position monitoring.
+
+This module implements the ProtocolAdapter interface for Compound V3, supporting
+Ethereum, Arbitrum, Base, and Optimism. It fetches position data including
+per-asset collateral breakdowns, borrow rates, and supply APYs.
+"""
+
 import logging
 import math
 from typing import List

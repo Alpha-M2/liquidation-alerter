@@ -1,3 +1,15 @@
+"""Main entry point for the DeFi Liquidation Alerter.
+
+This module initializes and runs all application components:
+- Database initialization
+- Prometheus metrics server
+- Telegram bot for user interaction
+- Position monitoring engine
+
+Usage:
+    python -m app.main
+"""
+
 import asyncio
 import logging
 import signal
@@ -24,7 +36,7 @@ async def run_monitoring_engine(engine: MonitoringEngine):
         raise
 
 
-async def metrics_handler(request: web.Request) -> web.Response:
+async def metrics_handler(_request: web.Request) -> web.Response:
     """Prometheus metrics endpoint."""
     return web.Response(
         body=get_metrics(),
@@ -32,7 +44,7 @@ async def metrics_handler(request: web.Request) -> web.Response:
     )
 
 
-async def health_handler(request: web.Request) -> web.Response:
+async def health_handler(_request: web.Request) -> web.Response:
     """Health check endpoint."""
     return web.json_response({"status": "healthy"})
 

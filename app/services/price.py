@@ -1,3 +1,10 @@
+"""Multi-source price oracle service.
+
+This module provides a price aggregation service that fetches prices from
+multiple sources (Chainlink, Uniswap TWAP, CoinGecko) with automatic
+fallback and validation between sources.
+"""
+
 import logging
 import aiohttp
 from dataclasses import dataclass

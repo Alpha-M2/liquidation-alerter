@@ -1,3 +1,10 @@
+"""Health factor assessment and risk calculations.
+
+This module provides functions for evaluating DeFi position health,
+calculating unified risk scores across protocols, and generating
+actionable recommendations for users to manage their positions.
+"""
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List
@@ -278,7 +285,6 @@ def calculate_max_borrow(
 
 def calculate_liquidation_price(
     position: Position,
-    collateral_symbol: str = "ETH",
     current_price: float | None = None,
 ) -> float | None:
     """

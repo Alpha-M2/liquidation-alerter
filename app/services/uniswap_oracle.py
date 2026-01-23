@@ -1,8 +1,12 @@
+"""Uniswap V3 TWAP oracle as fallback price source.
+
+This module provides time-weighted average price (TWAP) calculations
+from Uniswap V3 pools, used as a fallback when Chainlink is unavailable.
+"""
+
 import logging
-import math
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict
 from web3 import AsyncWeb3
 
 from app.services.rpc import get_web3
@@ -159,7 +163,6 @@ class UniswapV3Oracle:
 
             # Get current slot0 for spot price
             slot0 = await pool.functions.slot0().call()
-            sqrt_price_x96 = slot0[0]
             current_tick = slot0[1]
 
             # Get TWAP using observe
