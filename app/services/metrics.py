@@ -211,26 +211,6 @@ def track_rpc_request(endpoint: str, method: str):
     return decorator
 
 
-def track_oracle_request(source: str, symbol: str):
-    """Decorator to track oracle request metrics."""
-    def decorator(func: Callable):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            status = "success"
-            try:
-                result = await func(*args, **kwargs)
-                if result:
-                    ORACLE_PRICE.labels(source=source, symbol=symbol).set(result.price if hasattr(result, 'price') else result)
-                return result
-            except Exception:
-                status = "error"
-                raise
-            finally:
-                ORACLE_REQUESTS_TOTAL.labels(source=source, symbol=symbol, status=status).inc()
-        return wrapper
-    return decorator
-
-
 def record_position_metrics(protocol: str, wallet: str, health_factor: float, collateral_usd: float, debt_usd: float):
     """Record metrics for a position."""
     # Use short wallet address for labels

@@ -8,10 +8,12 @@ before considering a state change as finalized.
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 from collections import deque
 
 from web3 import AsyncWeb3
+
+from app.services.cache import make_position_key
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +76,6 @@ class ReorgSafeStateTracker:
         # Track current block numbers per chain
         self._block_numbers: Dict[str, int] = {}
 
-    def _get_key(self, wallet_address: str, protocol: str) -> str:
-        """Generate a unique key for wallet:protocol combination."""
-        return f"{wallet_address.lower()}:{protocol}"
-
     def update_block_number(self, chain: str, block_number: int):
         """Update the current block number for a chain."""
         self._block_numbers[chain] = block_number
@@ -111,7 +109,7 @@ class ReorgSafeStateTracker:
             - is_new_confirmed_state: True if this observation resulted in a new confirmed state
             - confirmed_state: The confirmed state (None if not yet confirmed)
         """
-        key = self._get_key(wallet_address, protocol)
+        key = make_position_key(wallet_address, protocol)
 
         # Initialize history if needed
         if key not in self._state_history:
@@ -210,7 +208,7 @@ class ReorgSafeStateTracker:
         self, wallet_address: str, protocol: str
     ) -> ConfirmedState | None:
         """Get the last confirmed state for a position."""
-        key = self._get_key(wallet_address, protocol)
+        key = make_position_key(wallet_address, protocol)
         return self._confirmed_states.get(key)
 
     def is_state_confirmed(
@@ -224,7 +222,7 @@ class ReorgSafeStateTracker:
 
         Returns True if the state has been observed for enough blocks.
         """
-        key = self._get_key(wallet_address, protocol)
+        key = make_position_key(wallet_address, protocol)
         confirmed = self._confirmed_states.get(key)
 
         if confirmed is None:
@@ -261,7 +259,7 @@ class ReorgSafeStateTracker:
         Returns:
             Tuple of (should_alert, reason)
         """
-        key = self._get_key(wallet_address, protocol)
+        key = make_position_key(wallet_address, protocol)
         history = self._state_history.get(key)
 
         # First observation - don't alert yet
@@ -284,7 +282,7 @@ class ReorgSafeStateTracker:
     def clear_history(self, wallet_address: str, protocol: str | None = None):
         """Clear state history for a wallet."""
         if protocol:
-            key = self._get_key(wallet_address, protocol)
+            key = make_position_key(wallet_address, protocol)
             self._state_history.pop(key, None)
             self._confirmed_states.pop(key, None)
         else:
@@ -296,7 +294,7 @@ class ReorgSafeStateTracker:
                 self._state_history.pop(key, None)
                 self._confirmed_states.pop(key, None)
 
-    def get_stats(self) -> Dict[str, any]:
+    def get_stats(self) -> Dict[str, Any]:
         """Get reorg tracker statistics."""
         pending_count = 0
         confirmed_count = 0

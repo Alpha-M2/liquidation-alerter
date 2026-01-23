@@ -16,6 +16,7 @@ from telegram import Bot
 from app.protocols.base import Position
 from app.core.health import HealthAssessment, HealthStatus
 from app.bot.messages import format_alert_message, format_gas_warning
+from app.services.cache import make_position_key
 
 logger = logging.getLogger(__name__)
 
@@ -91,10 +92,8 @@ class GasAwareAlerter:
         self._health_history: Dict[str, HealthHistory] = {}
 
     def _get_alert_key(self, chat_id: int, wallet_address: str, protocol: str) -> str:
-        return f"{chat_id}:{wallet_address}:{protocol}"
-
-    def _get_history_key(self, wallet_address: str, protocol: str) -> str:
-        return f"{wallet_address}:{protocol}"
+        """Generate key for alert history (includes chat_id for per-user tracking)."""
+        return f"{chat_id}:{make_position_key(wallet_address, protocol)}"
 
     def _should_alert(
         self,
@@ -144,7 +143,7 @@ class GasAwareAlerter:
         current_hf: float,
     ) -> bool:
         """Check if health factor is deteriorating rapidly (>10% in 1 hour)."""
-        history_key = self._get_history_key(wallet_address, protocol)
+        history_key = make_position_key(wallet_address, protocol)
 
         if history_key not in self._health_history:
             self._health_history[history_key] = HealthHistory()
@@ -297,7 +296,7 @@ class GasAwareAlerter:
         protocol: str,
     ) -> float | None:
         """Get current deterioration rate for a position."""
-        history_key = self._get_history_key(wallet_address, protocol)
+        history_key = make_position_key(wallet_address, protocol)
         if history_key in self._health_history:
             return self._health_history[history_key].get_deterioration_rate()
         return None

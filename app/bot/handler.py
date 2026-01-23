@@ -187,16 +187,18 @@ async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
+async def _get_user_wallets_and_thresholds(chat_id: int) -> tuple[list[Wallet], float, float] | None:
+    """Fetch user's wallets and alert thresholds from database.
 
+    Returns:
+        Tuple of (wallets, warning_threshold, critical_threshold) or None if no user/wallets
+    """
     async with db.async_session() as session:
         result = await session.execute(select(User).where(User.chat_id == chat_id))
         user = result.scalar_one_or_none()
 
         if not user:
-            await update.message.reply_text(format_no_wallets(), parse_mode="Markdown")
-            return
+            return None
 
         result = await session.execute(
             select(Wallet).where(Wallet.user_id == user.id)
@@ -204,22 +206,39 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         wallets = result.scalars().all()
 
         if not wallets:
-            await update.message.reply_text(format_no_wallets(), parse_mode="Markdown")
-            return
+            return None
 
-        # Get user thresholds
         warning_threshold = user.alert_threshold or 1.5
         critical_threshold = user.critical_threshold or 1.1
 
-    if not _engine:
-        await update.message.reply_text("Monitoring engine not initialized.")
-        return
+        return list(wallets), warning_threshold, critical_threshold
 
+
+async def _build_position_response(
+    wallets: list[Wallet],
+    warning_threshold: float,
+    critical_threshold: float,
+    detailed: bool = False,
+) -> str:
+    """Build formatted position response for all wallets.
+
+    Args:
+        wallets: List of user's wallets to check
+        warning_threshold: Health factor threshold for warnings
+        critical_threshold: Health factor threshold for critical alerts
+        detailed: If True, fetch and format detailed per-asset breakdown
+
+    Returns:
+        Formatted message string with all position information
+    """
     all_positions = []
     messages = []
 
     for wallet in wallets:
-        positions = await _engine.get_positions_for_wallet(wallet.address)
+        if detailed:
+            positions = await _engine.get_detailed_positions_for_wallet(wallet.address)
+        else:
+            positions = await _engine.get_positions_for_wallet(wallet.address)
 
         if not positions:
             messages.append(format_no_positions(wallet.address))
@@ -232,14 +251,37 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 warning_threshold=warning_threshold,
                 critical_threshold=critical_threshold,
             )
-            messages.append(format_position_status(position, assessment))
+            if detailed:
+                messages.append(format_detailed_position_status(position, assessment))
+            else:
+                messages.append(format_position_status(position, assessment))
 
     # Add unified health score if multiple positions
     if len(all_positions) > 1:
         unified = calculate_unified_health_score(all_positions)
         messages.insert(0, format_unified_health_score(unified))
 
-    response = "\n\n---\n\n".join(messages) if messages else format_no_wallets()
+    return "\n\n---\n\n".join(messages) if messages else format_no_wallets()
+
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show basic position status for all monitored wallets."""
+    chat_id = update.effective_chat.id
+
+    user_data = await _get_user_wallets_and_thresholds(chat_id)
+    if not user_data:
+        await update.message.reply_text(format_no_wallets(), parse_mode="Markdown")
+        return
+
+    wallets, warning_threshold, critical_threshold = user_data
+
+    if not _engine:
+        await update.message.reply_text("Monitoring engine not initialized.")
+        return
+
+    response = await _build_position_response(
+        wallets, warning_threshold, critical_threshold, detailed=False
+    )
     await update.message.reply_text(response, parse_mode="Markdown", disable_web_page_preview=True)
 
 
@@ -247,58 +289,20 @@ async def detail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show detailed position breakdown with per-asset information."""
     chat_id = update.effective_chat.id
 
-    async with db.async_session() as session:
-        result = await session.execute(select(User).where(User.chat_id == chat_id))
-        user = result.scalar_one_or_none()
+    user_data = await _get_user_wallets_and_thresholds(chat_id)
+    if not user_data:
+        await update.message.reply_text(format_no_wallets(), parse_mode="Markdown")
+        return
 
-        if not user:
-            await update.message.reply_text(format_no_wallets(), parse_mode="Markdown")
-            return
-
-        result = await session.execute(
-            select(Wallet).where(Wallet.user_id == user.id)
-        )
-        wallets = result.scalars().all()
-
-        if not wallets:
-            await update.message.reply_text(format_no_wallets(), parse_mode="Markdown")
-            return
-
-        # Get user thresholds
-        warning_threshold = user.alert_threshold or 1.5
-        critical_threshold = user.critical_threshold or 1.1
+    wallets, warning_threshold, critical_threshold = user_data
 
     if not _engine:
         await update.message.reply_text("Monitoring engine not initialized.")
         return
 
-    all_positions = []
-    messages = []
-
-    for wallet in wallets:
-        # Use detailed positions
-        positions = await _engine.get_detailed_positions_for_wallet(wallet.address)
-
-        if not positions:
-            messages.append(format_no_positions(wallet.address))
-            continue
-
-        for position in positions:
-            all_positions.append(position)
-            assessment = assess_health(
-                position,
-                warning_threshold=warning_threshold,
-                critical_threshold=critical_threshold,
-            )
-            # Use detailed formatting
-            messages.append(format_detailed_position_status(position, assessment))
-
-    # Add unified health score if multiple positions
-    if len(all_positions) > 1:
-        unified = calculate_unified_health_score(all_positions)
-        messages.insert(0, format_unified_health_score(unified))
-
-    response = "\n\n---\n\n".join(messages) if messages else format_no_wallets()
+    response = await _build_position_response(
+        wallets, warning_threshold, critical_threshold, detailed=True
+    )
     await update.message.reply_text(response, parse_mode="Markdown", disable_web_page_preview=True)
 
 

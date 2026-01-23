@@ -9,7 +9,7 @@ reorg protection to prevent false alerts.
 import asyncio
 import logging
 import time
-from typing import List, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -28,6 +28,7 @@ from app.core.cascade import get_cascade_detector, CascadeAlert
 from app.services.price import MultiSourcePriceService
 from app.services.multicall import BatchPositionFetcher
 from app.services.reorg import get_reorg_tracker
+from app.services.cache import make_position_key
 from app.bot.messages import format_liquidation_cascade_warning
 
 logger = logging.getLogger(__name__)
@@ -57,10 +58,6 @@ class SmartPollingManager:
         self._last_check: Dict[str, float] = {}
         # Track last known health factor for each wallet:protocol
         self._health_factors: Dict[str, float] = {}
-
-    def _get_key(self, wallet_address: str, protocol: str) -> str:
-        """Generate a unique key for wallet:protocol combination."""
-        return f"{wallet_address.lower()}:{protocol}"
 
     def get_polling_interval(self, health_factor: float) -> int:
         """
@@ -92,7 +89,7 @@ class SmartPollingManager:
         Returns:
             True if the position should be checked this cycle
         """
-        key = self._get_key(wallet_address, protocol)
+        key = make_position_key(wallet_address, protocol)
         now = time.time()
 
         last_check = self._last_check.get(key, 0)
@@ -112,7 +109,7 @@ class SmartPollingManager:
             protocol: Protocol name
             health_factor: Current health factor
         """
-        key = self._get_key(wallet_address, protocol)
+        key = make_position_key(wallet_address, protocol)
         self._last_check[key] = time.time()
         self._health_factors[key] = health_factor
 
@@ -143,7 +140,7 @@ class SmartPollingManager:
 
         return result
 
-    def get_stats(self) -> Dict[str, any]:
+    def get_stats(self) -> Dict[str, Any]:
         """Get polling statistics."""
         critical_count = 0
         medium_count = 0
@@ -577,10 +574,10 @@ class MonitoringEngine:
     def get_adapters(self) -> List[ProtocolAdapter]:
         return self._adapters
 
-    def get_polling_stats(self) -> Dict[str, any]:
+    def get_polling_stats(self) -> Dict[str, Any]:
         """Get smart polling statistics."""
         return self._polling_manager.get_stats()
 
-    def get_reorg_stats(self) -> Dict[str, any]:
+    def get_reorg_stats(self) -> Dict[str, Any]:
         """Get reorg tracker statistics."""
         return self._reorg_tracker.get_stats()

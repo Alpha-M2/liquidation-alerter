@@ -97,6 +97,7 @@ def format_position_status(
     assessment: HealthAssessment,
     include_recommendations: bool = True,
 ) -> str:
+    """Format basic position status for display."""
     emoji = get_status_emoji(assessment.status)
     short_addr = f"{position.wallet_address[:6]}...{position.wallet_address[-4:]}"
     protocol_url = get_protocol_url(position.protocol)
@@ -110,9 +111,13 @@ def format_position_status(
 *Collateral:* {format_usd(position.total_collateral_usd)}
 *Debt:* {format_usd(position.total_debt_usd)}
 *Liq. Threshold:* {position.liquidation_threshold:.0%}
-
-_{assessment.message}_
 """.strip()
+
+    # Add liquidation risk info if position has debt
+    if assessment.price_drop_to_liquidation_percent is not None:
+        msg += f"\n*Price Drop to Liq:* {assessment.price_drop_to_liquidation_percent:.1f}%"
+
+    msg += f"\n\n_{assessment.message}_"
 
     # Add recommendations if available
     if include_recommendations and assessment.recommendations:
@@ -222,7 +227,7 @@ def format_detailed_position_status(
     """Format detailed position status with per-asset breakdown.
 
     Shows individual collateral and debt assets with their balances,
-    APYs, and risk parameters.
+    APYs, risk parameters, and liquidation risk metrics.
     """
     emoji = get_status_emoji(assessment.status)
     short_addr = f"{position.wallet_address[:6]}...{position.wallet_address[-4:]}"
@@ -256,11 +261,22 @@ def format_detailed_position_status(
     else:
         msg += f"*Debt:* {format_usd(position.total_debt_usd)}\n\n"
 
-    # Summary line
+    # Risk metrics section
+    msg += "*📊 Risk Metrics*\n"
     msg += f"*Liq. Threshold:* {position.liquidation_threshold:.0%}"
     if position.available_borrows_usd > 0:
         msg += f" | *Available:* {format_usd(position.available_borrows_usd)}"
     msg += "\n"
+
+    # Add liquidation risk metrics
+    if assessment.price_drop_to_liquidation_percent is not None:
+        msg += f"*Price Drop to Liq:* {assessment.price_drop_to_liquidation_percent:.1f}%\n"
+
+    if assessment.safe_withdrawal_usd is not None and assessment.safe_withdrawal_usd > 0:
+        msg += f"*Safe Withdrawal:* {format_usd(assessment.safe_withdrawal_usd)}\n"
+
+    if assessment.max_additional_borrow_usd is not None and assessment.max_additional_borrow_usd > 0:
+        msg += f"*Max Add'l Borrow:* {format_usd(assessment.max_additional_borrow_usd)}\n"
 
     # Assessment message
     msg += f"\n_{assessment.message}_"

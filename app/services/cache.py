@@ -7,6 +7,22 @@ to minimize redundant RPC calls during monitoring cycles.
 from __future__ import annotations
 
 import time
+
+
+def make_position_key(wallet_address: str, protocol: str) -> str:
+    """Generate a unique cache/tracking key for a wallet:protocol combination.
+
+    This is a shared utility function used across multiple modules for consistent
+    key generation in caches, alert history, polling managers, and reorg trackers.
+
+    Args:
+        wallet_address: Ethereum wallet address (will be lowercased)
+        protocol: Protocol name (e.g., "Aave V3 (Ethereum)")
+
+    Returns:
+        Normalized key in format "wallet:protocol"
+    """
+    return f"{wallet_address.lower()}:{protocol}"
 from dataclasses import dataclass
 from typing import Dict, Generic, TypeVar, Any, Optional
 
@@ -149,33 +165,29 @@ class PositionCache:
         self._basic_cache: TTLCache[Dict] = TTLCache(default_ttl_seconds=self.BASIC_TTL)
         self._detailed_cache: TTLCache[Dict] = TTLCache(default_ttl_seconds=self.DETAILED_TTL)
 
-    def _make_key(self, wallet_address: str, protocol: str) -> str:
-        """Generate cache key from wallet and protocol."""
-        return f"{wallet_address.lower()}:{protocol}"
-
     def get_basic(self, wallet_address: str, protocol: str) -> Optional[Dict]:
         """Get cached basic position data."""
-        key = self._make_key(wallet_address, protocol)
+        key = make_position_key(wallet_address, protocol)
         return self._basic_cache.get(key)
 
     def set_basic(self, wallet_address: str, protocol: str, data: Dict) -> None:
         """Cache basic position data."""
-        key = self._make_key(wallet_address, protocol)
+        key = make_position_key(wallet_address, protocol)
         self._basic_cache.set(key, data)
 
     def get_detailed(self, wallet_address: str, protocol: str) -> Optional[Dict]:
         """Get cached detailed position data."""
-        key = self._make_key(wallet_address, protocol)
+        key = make_position_key(wallet_address, protocol)
         return self._detailed_cache.get(key)
 
     def set_detailed(self, wallet_address: str, protocol: str, data: Dict) -> None:
         """Cache detailed position data."""
-        key = self._make_key(wallet_address, protocol)
+        key = make_position_key(wallet_address, protocol)
         self._detailed_cache.set(key, data)
 
     def invalidate(self, wallet_address: str, protocol: str) -> None:
         """Invalidate cache for a specific wallet+protocol."""
-        key = self._make_key(wallet_address, protocol)
+        key = make_position_key(wallet_address, protocol)
         self._basic_cache.delete(key)
         self._detailed_cache.delete(key)
 

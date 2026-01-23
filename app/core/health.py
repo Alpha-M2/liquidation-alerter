@@ -35,6 +35,10 @@ class HealthAssessment:
     normalized_score: float  # 0-100 score
     message: str
     recommendations: List[ActionRecommendation] = field(default_factory=list)
+    # Liquidation risk metrics
+    price_drop_to_liquidation_percent: float | None = None
+    safe_withdrawal_usd: float | None = None
+    max_additional_borrow_usd: float | None = None
 
 
 @dataclass
@@ -67,15 +71,28 @@ def assess_health(
     warning_threshold: float = 1.5,
     critical_threshold: float = 1.1,
 ) -> HealthAssessment:
-    """Assess health of a single position with recommendations."""
+    """Assess health of a single position with recommendations.
+
+    Args:
+        position: The DeFi lending position to assess
+        warning_threshold: Health factor below which to issue warnings (default 1.5)
+        critical_threshold: Health factor below which position is critical (default 1.1)
+
+    Returns:
+        HealthAssessment with status, recommendations, and risk metrics
+    """
     hf = position.health_factor
     normalized = calculate_normalized_score(hf)
     recommendations = []
 
+    # Calculate liquidation risk metrics
+    price_drop_pct = calculate_price_drop_to_liquidation(position)
+    safe_withdrawal = calculate_safe_withdrawal(position, target_health_factor=1.5)
+    max_borrow = calculate_max_borrow(position, target_health_factor=1.5)
+
     if hf <= 1.0:
         status = HealthStatus.LIQUIDATABLE
         message = "Position is liquidatable! Immediate action required."
-        # Calculate exact repayment needed
         repay_amount = calculate_repayment_for_target_hf(position, target_hf=1.5)
         deposit_amount = calculate_deposit_for_target_hf(position, target_hf=1.5)
         recommendations = [
@@ -134,6 +151,9 @@ def assess_health(
         normalized_score=normalized,
         message=message,
         recommendations=recommendations,
+        price_drop_to_liquidation_percent=price_drop_pct,
+        safe_withdrawal_usd=safe_withdrawal,
+        max_additional_borrow_usd=max_borrow,
     )
 
 
@@ -258,7 +278,15 @@ def calculate_safe_withdrawal(
     position: Position,
     target_health_factor: float = 1.5,
 ) -> float:
-    """Calculate maximum safe collateral withdrawal."""
+    """Calculate maximum safe collateral withdrawal while maintaining target HF.
+
+    Args:
+        position: The DeFi lending position
+        target_health_factor: Minimum health factor to maintain after withdrawal
+
+    Returns:
+        Maximum USD value that can be safely withdrawn
+    """
     if position.total_debt_usd == 0:
         return position.total_collateral_usd
 
@@ -274,7 +302,15 @@ def calculate_max_borrow(
     position: Position,
     target_health_factor: float = 1.5,
 ) -> float:
-    """Calculate maximum additional borrow while maintaining target HF."""
+    """Calculate maximum additional borrow while maintaining target HF.
+
+    Args:
+        position: The DeFi lending position
+        target_health_factor: Minimum health factor to maintain after borrowing
+
+    Returns:
+        Maximum USD value that can be additionally borrowed
+    """
     max_debt = (
         position.total_collateral_usd * position.liquidation_threshold
     ) / target_health_factor
