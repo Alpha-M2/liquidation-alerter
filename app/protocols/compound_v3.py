@@ -14,6 +14,7 @@ from web3.eth import AsyncEth
 
 from app.protocols.base import ProtocolAdapter, Position, CollateralAsset, DebtAsset
 from app.config import get_settings
+from app.services.cache import get_position_cache
 from app.services.token_metadata import get_token_metadata_service
 
 logger = logging.getLogger(__name__)
@@ -168,6 +169,7 @@ class CompoundV3Adapter(ProtocolAdapter):
             address=AsyncWeb3.to_checksum_address(self._comet_address),
             abi=COMET_ABI,
         )
+        self._position_cache = get_position_cache()
 
     @property
     def name(self) -> str:
@@ -196,6 +198,11 @@ class CompoundV3Adapter(ProtocolAdapter):
 
     async def get_position(self, wallet_address: str) -> Position | None:
         """Get basic position data (backward compatible)."""
+        # Check cache first
+        cached = self._position_cache.get_basic(wallet_address, self.name)
+        if cached is not None:
+            return cached
+
         try:
             checksum_address = AsyncWeb3.to_checksum_address(wallet_address)
 
@@ -244,7 +251,7 @@ class CompoundV3Adapter(ProtocolAdapter):
             else:
                 health_factor = float("inf")
 
-            return Position(
+            position = Position(
                 protocol=self.name,
                 wallet_address=wallet_address,
                 health_factor=health_factor,
@@ -256,6 +263,8 @@ class CompoundV3Adapter(ProtocolAdapter):
                 available_borrows_usd=0.0,
                 chain=self._chain,
             )
+            self._position_cache.set_basic(wallet_address, self.name, position)
+            return position
         except Exception:
             return None
 
@@ -267,6 +276,11 @@ class CompoundV3Adapter(ProtocolAdapter):
         - Base token debt balance and APY
         - Supply APY for base token
         """
+        # Check cache first
+        cached = self._position_cache.get_detailed(wallet_address, self.name)
+        if cached is not None:
+            return cached
+
         try:
             checksum_address = AsyncWeb3.to_checksum_address(wallet_address)
             token_service = get_token_metadata_service()
@@ -431,7 +445,7 @@ class CompoundV3Adapter(ProtocolAdapter):
                 borrow_costs = total_debt_usd * borrow_apy
                 net_apy = (supply_earnings - borrow_costs) / total_collateral_usd
 
-            return Position(
+            position = Position(
                 protocol=self.name,
                 chain=self._chain,
                 wallet_address=wallet_address,
@@ -444,6 +458,8 @@ class CompoundV3Adapter(ProtocolAdapter):
                 available_borrows_usd=available_borrows,
                 net_apy=net_apy,
             )
+            self._position_cache.set_detailed(wallet_address, self.name, position)
+            return position
 
         except Exception as e:
             logger.error(f"Error fetching detailed Compound V3 position for {wallet_address}: {e}")

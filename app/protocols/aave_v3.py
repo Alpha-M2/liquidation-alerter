@@ -13,6 +13,7 @@ from web3.eth import AsyncEth
 
 from app.protocols.base import ProtocolAdapter, Position, CollateralAsset, DebtAsset
 from app.config import get_settings
+from app.services.cache import get_position_cache
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +205,8 @@ class AaveV3Adapter(ProtocolAdapter):
             )
         else:
             self._ui_data_provider = None
+
+        self._position_cache = get_position_cache()
 
     @property
     def name(self) -> str:
@@ -440,6 +443,11 @@ class AaveV3Adapter(ProtocolAdapter):
 
     async def get_position(self, wallet_address: str) -> Position | None:
         """Get basic position data (backward compatible)."""
+        # Check cache first
+        cached = self._position_cache.get_basic(wallet_address, self.name)
+        if cached is not None:
+            return cached
+
         try:
             checksum_address = AsyncWeb3.to_checksum_address(wallet_address)
             data = await self._pool_contract.functions.getUserAccountData(
@@ -455,7 +463,7 @@ class AaveV3Adapter(ProtocolAdapter):
             if total_collateral_base == 0 and total_debt_base == 0:
                 return None
 
-            return Position(
+            position = Position(
                 protocol=self.name,
                 wallet_address=wallet_address,
                 health_factor=health_factor,
@@ -467,6 +475,8 @@ class AaveV3Adapter(ProtocolAdapter):
                 available_borrows_usd=available_borrows_base,
                 chain=self._chain,
             )
+            self._position_cache.set_basic(wallet_address, self.name, position)
+            return position
         except Exception:
             return None
 
@@ -480,6 +490,11 @@ class AaveV3Adapter(ProtocolAdapter):
 
         Falls back to basic position if UI data provider is unavailable.
         """
+        # Check cache first
+        cached = self._position_cache.get_detailed(wallet_address, self.name)
+        if cached is not None:
+            return cached
+
         if not self._ui_data_provider:
             logger.debug(f"UI data provider not available for {self._chain}, using basic position")
             return await self.get_position(wallet_address)
@@ -579,7 +594,7 @@ class AaveV3Adapter(ProtocolAdapter):
                     borrow_costs = total_debt_usd * borrow_apy
                     net_apy = (supply_earnings - borrow_costs) / total_collateral_usd
 
-            return Position(
+            position = Position(
                 protocol=self.name,
                 chain=self._chain,
                 wallet_address=wallet_address,
@@ -592,6 +607,8 @@ class AaveV3Adapter(ProtocolAdapter):
                 available_borrows_usd=available_borrows,
                 net_apy=net_apy,
             )
+            self._position_cache.set_detailed(wallet_address, self.name, position)
+            return position
 
         except Exception as e:
             logger.error(f"Error fetching detailed position for {wallet_address} on {self.name}: {e}")

@@ -7,6 +7,8 @@ to minimize redundant RPC calls during monitoring cycles.
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
+from typing import Dict, Generic, TypeVar, Any, Optional
 
 
 def make_position_key(wallet_address: str, protocol: str) -> str:
@@ -23,8 +25,6 @@ def make_position_key(wallet_address: str, protocol: str) -> str:
         Normalized key in format "wallet:protocol"
     """
     return f"{wallet_address.lower()}:{protocol}"
-from dataclasses import dataclass
-from typing import Dict, Generic, TypeVar, Any, Optional
 
 T = TypeVar("T")
 
