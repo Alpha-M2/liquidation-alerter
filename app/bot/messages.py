@@ -82,6 +82,62 @@ def format_usd(amount: float) -> str:
     return f"${amount:.2f}"
 
 
+def format_usd_short(amount: float) -> str:
+    """Format USD amount in short form for tables (e.g., $264K, $1.2M)."""
+    if amount >= 1_000_000:
+        return f"${amount / 1_000_000:.1f}M"
+    if amount >= 1_000:
+        return f"${amount / 1_000:.0f}K"
+    return f"${amount:.0f}"
+
+
+def format_balance_short(balance: float) -> str:
+    """Format token balance for table display."""
+    if balance >= 1_000_000:
+        return f"{balance / 1_000_000:.2f}M"
+    if balance >= 1_000:
+        return f"{balance / 1_000:.2f}K"
+    if balance >= 1:
+        return f"{balance:.2f}"
+    if balance >= 0.01:
+        return f"{balance:.4f}"
+    return f"{balance:.6f}"
+
+
+def format_collateral_table(assets: List[CollateralAsset]) -> str:
+    """Format collateral assets as a monospace table block."""
+    if not assets:
+        return "```\nNo collateral assets\n```"
+
+    lines = ["Asset     Balance      Value    APY"]
+    for asset in assets:
+        symbol = asset.symbol[:7].ljust(7)
+        bal = format_balance_short(asset.balance).rjust(9)
+        val = format_usd_short(asset.balance_usd).rjust(8)
+        apy = f"+{asset.supply_apy * 100:.1f}%" if asset.supply_apy else "   -"
+        apy = apy.rjust(6)
+        lines.append(f"{symbol}  {bal}  {val}  {apy}")
+
+    return "```\n" + "\n".join(lines) + "\n```"
+
+
+def format_debt_table(assets: List[DebtAsset]) -> str:
+    """Format debt assets as a monospace table block."""
+    if not assets:
+        return "```\nNo debt\n```"
+
+    lines = ["Asset       Debt      Value    APY"]
+    for asset in assets:
+        symbol = asset.symbol[:7].ljust(7)
+        bal = format_balance_short(asset.balance).rjust(9)
+        val = format_usd_short(asset.balance_usd).rjust(8)
+        apy = f"-{asset.borrow_apy * 100:.1f}%" if asset.borrow_apy else "   -"
+        apy = apy.rjust(6)
+        lines.append(f"{symbol}  {bal}  {val}  {apy}")
+
+    return "```\n" + "\n".join(lines) + "\n```"
+
+
 def format_health_factor(hf: float) -> str:
     if hf == float("inf"):
         return "∞"
@@ -227,56 +283,49 @@ def format_detailed_position_status(
     """Format detailed position status with per-asset breakdown.
 
     Shows individual collateral and debt assets with their balances,
-    APYs, risk parameters, and liquidation risk metrics.
+    APYs, risk parameters, and liquidation risk metrics in a clean
+    table-like format.
     """
     emoji = get_status_emoji(assessment.status)
     short_addr = f"{position.wallet_address[:6]}...{position.wallet_address[-4:]}"
     protocol_url = get_protocol_url(position.protocol)
 
-    # Header with health factor
+    # Header
     msg = f"{emoji} *{position.protocol}* | `{short_addr}`\n\n"
-    msg += f"*Health Factor:* {format_health_factor(position.health_factor)}"
-    msg += f" | *Status:* {assessment.status.value.title()}\n"
 
-    # Net APY if available
+    # Summary section in monospace
+    hf_display = format_health_factor(position.health_factor)
+    net_apy_str = ""
     if position.net_apy is not None:
-        net_apy_str = f"+{format_apy(position.net_apy)}" if position.net_apy >= 0 else f"{format_apy(position.net_apy)}"
-        msg += f"*Net APY:* {net_apy_str}\n"
+        net_apy_str = f"+{position.net_apy * 100:.1f}%" if position.net_apy >= 0 else f"{position.net_apy * 100:.1f}%"
+    else:
+        net_apy_str = "N/A"
 
-    msg += "\n"
+    msg += f"```\nHealth Factor: {hf_display} {emoji}\n"
+    msg += f"Net APY:       {net_apy_str}\n```\n\n"
 
-    # Collateral section
+    # Supplied section
+    msg += "📈 *Supplied*\n"
     if position.collateral_assets:
-        msg += f"*📥 Collateral* ({format_usd(position.total_collateral_usd)})\n"
-        msg += format_collateral_assets(position.collateral_assets)
-        msg += "\n\n"
+        msg += format_collateral_table(position.collateral_assets)
     else:
-        msg += f"*Collateral:* {format_usd(position.total_collateral_usd)}\n\n"
+        msg += f"```\nTotal: {format_usd_short(position.total_collateral_usd)}\n```"
+    msg += "\n\n"
 
-    # Debt section
+    # Borrowed section
+    msg += "💸 *Borrowed*\n"
     if position.debt_assets:
-        msg += f"*📤 Debt* ({format_usd(position.total_debt_usd)})\n"
-        msg += format_debt_assets(position.debt_assets)
-        msg += "\n\n"
+        msg += format_debt_table(position.debt_assets)
     else:
-        msg += f"*Debt:* {format_usd(position.total_debt_usd)}\n\n"
-
-    # Risk metrics section
-    msg += "*📊 Risk Metrics*\n"
-    msg += f"*Liq. Threshold:* {position.liquidation_threshold:.0%}"
-    if position.available_borrows_usd > 0:
-        msg += f" | *Available:* {format_usd(position.available_borrows_usd)}"
+        if position.total_debt_usd > 0:
+            msg += f"```\nTotal: {format_usd_short(position.total_debt_usd)}\n```"
+        else:
+            msg += "```\nNo debt\n```"
     msg += "\n"
 
-    # Add liquidation risk metrics
+    # Risk metrics (compact)
     if assessment.price_drop_to_liquidation_percent is not None:
-        msg += f"*Price Drop to Liq:* {assessment.price_drop_to_liquidation_percent:.1f}%\n"
-
-    if assessment.safe_withdrawal_usd is not None and assessment.safe_withdrawal_usd > 0:
-        msg += f"*Safe Withdrawal:* {format_usd(assessment.safe_withdrawal_usd)}\n"
-
-    if assessment.max_additional_borrow_usd is not None and assessment.max_additional_borrow_usd > 0:
-        msg += f"*Max Add'l Borrow:* {format_usd(assessment.max_additional_borrow_usd)}\n"
+        msg += f"\n*Price Drop to Liq:* {assessment.price_drop_to_liquidation_percent:.1f}%"
 
     # Assessment message
     msg += f"\n_{assessment.message}_"

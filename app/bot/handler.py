@@ -280,7 +280,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     response = await _build_position_response(
-        wallets, warning_threshold, critical_threshold, detailed=False
+        wallets, warning_threshold, critical_threshold, detailed=True
     )
     await update.message.reply_text(response, parse_mode="Markdown", disable_web_page_preview=True)
 
