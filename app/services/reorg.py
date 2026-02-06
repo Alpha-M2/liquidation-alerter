@@ -8,10 +8,8 @@ before considering a state change as finalized.
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Tuple
+from typing import Dict, Tuple
 from collections import deque
-
-from web3 import AsyncWeb3
 
 from app.services.cache import make_position_key
 
@@ -204,119 +202,6 @@ class ReorgSafeStateTracker:
             and state1.is_liquidatable == state2.is_liquidatable
         )
 
-    def get_confirmed_state(
-        self, wallet_address: str, protocol: str
-    ) -> ConfirmedState | None:
-        """Get the last confirmed state for a position."""
-        key = make_position_key(wallet_address, protocol)
-        return self._confirmed_states.get(key)
-
-    def is_state_confirmed(
-        self,
-        wallet_address: str,
-        protocol: str,
-        health_factor: float,
-    ) -> bool:
-        """
-        Check if a given health factor state is confirmed.
-
-        Returns True if the state has been observed for enough blocks.
-        """
-        key = make_position_key(wallet_address, protocol)
-        confirmed = self._confirmed_states.get(key)
-
-        if confirmed is None:
-            return False
-
-        # Check if the confirmed state matches the given health factor
-        is_critical = health_factor < 1.3
-        is_liquidatable = health_factor <= 1.0
-
-        return (
-            confirmed.is_critical == is_critical
-            and confirmed.is_liquidatable == is_liquidatable
-        )
-
-    def should_alert(
-        self,
-        wallet_address: str,
-        protocol: str,
-        health_factor: float,
-        block_number: int,
-    ) -> Tuple[bool, str | None]:
-        """
-        Determine if an alert should be sent for this position.
-
-        Only alerts for confirmed state changes to prevent reorg-related
-        false alerts.
-
-        Args:
-            wallet_address: Wallet address
-            protocol: Protocol name
-            health_factor: Current health factor
-            block_number: Current block number
-
-        Returns:
-            Tuple of (should_alert, reason)
-        """
-        key = make_position_key(wallet_address, protocol)
-        history = self._state_history.get(key)
-
-        # First observation - don't alert yet
-        if history is None or len(history) < 2:
-            return False, "insufficient_history"
-
-        # Check for confirmed state
-        confirmed = self._confirmed_states.get(key)
-        if confirmed is None:
-            return False, "not_confirmed"
-
-        # Alert if the confirmed state is critical or liquidatable
-        if confirmed.is_liquidatable:
-            return True, "confirmed_liquidatable"
-        elif confirmed.is_critical:
-            return True, "confirmed_critical"
-
-        return False, "healthy"
-
-    def clear_history(self, wallet_address: str, protocol: str | None = None):
-        """Clear state history for a wallet."""
-        if protocol:
-            key = make_position_key(wallet_address, protocol)
-            self._state_history.pop(key, None)
-            self._confirmed_states.pop(key, None)
-        else:
-            # Clear all protocols for this wallet
-            keys_to_remove = [
-                k for k in self._state_history if k.startswith(wallet_address.lower())
-            ]
-            for key in keys_to_remove:
-                self._state_history.pop(key, None)
-                self._confirmed_states.pop(key, None)
-
-    def get_stats(self) -> Dict[str, Any]:
-        """Get reorg tracker statistics."""
-        pending_count = 0
-        confirmed_count = 0
-        critical_count = 0
-        liquidatable_count = 0
-
-        for key, confirmed in self._confirmed_states.items():
-            confirmed_count += 1
-            if confirmed.is_liquidatable:
-                liquidatable_count += 1
-            elif confirmed.is_critical:
-                critical_count += 1
-
-        pending_count = len(self._state_history) - confirmed_count
-
-        return {
-            "tracked_positions": len(self._state_history),
-            "confirmed_states": confirmed_count,
-            "pending_confirmation": pending_count,
-            "critical_confirmed": critical_count,
-            "liquidatable_confirmed": liquidatable_count,
-        }
 
 
 # Singleton instance

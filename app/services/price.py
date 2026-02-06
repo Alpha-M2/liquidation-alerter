@@ -226,20 +226,6 @@ class MultiSourcePriceService:
                 return False
         return True
 
-    async def get_prices(self, symbols: list[str]) -> Dict[str, UnifiedPrice]:
-        """Get prices for multiple symbols."""
-        results = {}
-        for symbol in symbols:
-            price = await self.get_price(symbol)
-            if price:
-                results[symbol.upper()] = price
-        return results
-
-    async def get_eth_price(self) -> float | None:
-        """Convenience method for ETH price."""
-        price = await self.get_price("ETH")
-        return price.price if price else None
-
     async def get_gas_price_gwei(self) -> float | None:
         """Get current gas price in Gwei."""
         try:
@@ -250,20 +236,3 @@ class MultiSourcePriceService:
         except Exception as e:
             logger.error(f"Error fetching gas price: {e}")
             return None
-
-
-# Legacy compatibility - keep old interface working
-class PriceService(MultiSourcePriceService):
-    """Alias for backward compatibility."""
-    pass
-
-
-# Singleton
-_price_service: MultiSourcePriceService | None = None
-
-
-def get_price_service() -> MultiSourcePriceService:
-    global _price_service
-    if _price_service is None:
-        _price_service = MultiSourcePriceService()
-    return _price_service

@@ -214,10 +214,10 @@ class MonitoringEngine:
             self._batch_fetchers[chain] = BatchPositionFetcher(web3)
 
     async def _update_block_numbers(self):
-        """Fetch current block numbers for all chains (used for reorg handling)."""
+        """Fetch current block numbers for all chains in parallel (used for reorg handling)."""
         chains = ["ethereum", "arbitrum", "base", "optimism"]
 
-        for chain in chains:
+        async def _fetch_block(chain: str):
             try:
                 web3 = self._web3_instances.get(chain)
                 if web3:
@@ -225,6 +225,8 @@ class MonitoringEngine:
                     self._reorg_tracker.update_block_number(chain, block_number)
             except Exception as e:
                 logger.debug(f"Failed to fetch block number for {chain}: {e}")
+
+        await asyncio.gather(*[_fetch_block(chain) for chain in chains])
 
     async def _batch_fetch_aave_positions(
         self,
@@ -339,27 +341,33 @@ class MonitoringEngine:
                 wallet_addresses, aave_protocols + compound_protocols
             )
 
-            # Batch fetch Aave positions for all chains using Multicall
+            # Batch fetch Aave positions for all chains in parallel using Multicall
             aave_positions: Dict[str, Dict[str, Position | None]] = {}
 
-            for chain in chains:
+            async def _fetch_chain_aave(chain: str) -> Tuple[str, Dict[str, Position | None]]:
                 protocol_name = f"Aave V3 ({chain.capitalize()})"
                 wallets_for_chain = wallets_to_check.get(protocol_name, [])
 
                 if not wallets_for_chain:
-                    aave_positions[chain] = {}
-                    continue
+                    return chain, {}
 
                 try:
-                    aave_positions[chain] = await self._batch_fetch_aave_positions(
+                    result = await self._batch_fetch_aave_positions(
                         chain, wallets_for_chain
                     )
                     logger.debug(
                         f"Smart polling: checked {len(wallets_for_chain)} wallets on {protocol_name}"
                     )
+                    return chain, result
                 except Exception as e:
                     logger.error(f"Failed to batch fetch Aave positions on {chain}: {e}")
-                    aave_positions[chain] = {}
+                    return chain, {}
+
+            chain_results = await asyncio.gather(
+                *[_fetch_chain_aave(chain) for chain in chains]
+            )
+            for chain, positions_map in chain_results:
+                aave_positions[chain] = positions_map
 
             # Process each user's wallets with the batch-fetched data
             for user in users:
@@ -537,47 +545,43 @@ class MonitoringEngine:
                 logger.error(f"Failed to send cascade alert: {e}")
 
     async def get_positions_for_wallet(self, wallet_address: str) -> List[Position]:
-        """Get basic positions for a wallet across all protocols."""
-        positions = []
-        for adapter in self._adapters:
+        """Get basic positions for a wallet across all protocols in parallel."""
+
+        async def _fetch(adapter: ProtocolAdapter) -> Position | None:
             try:
-                position = await adapter.get_position(wallet_address)
-                if position:
-                    positions.append(position)
+                return await adapter.get_position(wallet_address)
             except Exception as e:
                 logger.error(f"Error fetching position from {adapter.name}: {e}")
-        return positions
+                return None
+
+        results = await asyncio.gather(*[_fetch(a) for a in self._adapters])
+        return [p for p in results if p is not None]
 
     async def get_detailed_positions_for_wallet(self, wallet_address: str) -> List[Position]:
-        """Get detailed positions with per-asset breakdown for a wallet.
+        """Get detailed positions with per-asset breakdown for a wallet in parallel.
 
         Returns positions with collateral_assets and debt_assets populated.
         Falls back to basic position if detailed fetching fails.
         """
-        positions = []
-        for adapter in self._adapters:
+
+        async def _fetch_detailed(adapter: ProtocolAdapter) -> Position | None:
             try:
                 position = await adapter.get_detailed_position(wallet_address)
                 if position:
-                    positions.append(position)
+                    return position
             except Exception as e:
                 logger.error(f"Error fetching detailed position from {adapter.name}: {e}")
                 # Try fallback to basic position
                 try:
                     position = await adapter.get_position(wallet_address)
                     if position:
-                        positions.append(position)
+                        return position
                 except Exception:
                     pass
-        return positions
+            return None
+
+        results = await asyncio.gather(*[_fetch_detailed(a) for a in self._adapters])
+        return [p for p in results if p is not None]
 
     def get_adapters(self) -> List[ProtocolAdapter]:
         return self._adapters
-
-    def get_polling_stats(self) -> Dict[str, Any]:
-        """Get smart polling statistics."""
-        return self._polling_manager.get_stats()
-
-    def get_reorg_stats(self) -> Dict[str, Any]:
-        """Get reorg tracker statistics."""
-        return self._reorg_tracker.get_stats()

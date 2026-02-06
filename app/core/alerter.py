@@ -300,7 +300,3 @@ class GasAwareAlerter:
         if history_key in self._health_history:
             return self._health_history[history_key].get_deterioration_rate()
         return None
-
-
-# Backwards compatibility alias
-Alerter = GasAwareAlerter

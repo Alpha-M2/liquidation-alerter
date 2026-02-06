@@ -184,7 +184,6 @@ CRITICAL_HEALTH_FACTOR_THRESHOLD=1.1
 | `/add <address>` | Add a wallet to monitor | `/add 0x1234...abcd` |
 | `/remove <address>` | Remove a wallet from monitoring | `/remove 0x1234...abcd` |
 | `/status` | View detailed positions with per-asset table breakdown | `/status` |
-| `/detail` | Alias for `/status` | `/detail` |
 | `/simulate [%]` | Simulate price impact on positions | `/simulate -20` |
 | `/set_threshold <value>` | Set personal alert threshold | `/set_threshold 1.3` |
 | `/pause` | Pause all alerts | `/pause` |
@@ -195,7 +194,7 @@ CRITICAL_HEALTH_FACTOR_THRESHOLD=1.1
 
 ## Position Display
 
-The `/status` command (and its alias `/detail`) provides a comprehensive table-formatted view of your positions:
+The `/status` command provides a comprehensive table-formatted view of your positions:
 
 ```
 🟢 Aave V3 (Ethereum) | 0x1234...abcd

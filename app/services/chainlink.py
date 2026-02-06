@@ -99,6 +99,7 @@ class ChainlinkOracle:
     def __init__(self, web3: AsyncWeb3 | None = None):
         self._web3 = web3 or get_web3()
         self._price_cache: Dict[str, PriceData] = {}
+        self._decimals_cache: Dict[str, int] = {}
         self._cache_ttl = timedelta(seconds=30)
 
     def _get_staleness_threshold(self, symbol: str) -> int:
@@ -136,7 +137,13 @@ class ChainlinkOracle:
 
             # Get latest round data
             round_data = await contract.functions.latestRoundData().call()
-            decimals = await contract.functions.decimals().call()
+
+            # Cache decimals (constant per feed, never changes)
+            if feed_address in self._decimals_cache:
+                decimals = self._decimals_cache[feed_address]
+            else:
+                decimals = await contract.functions.decimals().call()
+                self._decimals_cache[feed_address] = decimals
 
             round_id = round_data[0]
             answer = round_data[1]
@@ -175,48 +182,6 @@ class ChainlinkOracle:
             logger.error(f"Error fetching Chainlink price for {symbol}: {e}")
             return None
 
-    async def get_prices(self, symbols: list[str]) -> Dict[str, PriceData]:
-        results = {}
-        for symbol in symbols:
-            price_data = await self.get_price(symbol)
-            if price_data:
-                results[symbol.upper()] = price_data
-        return results
-
-    async def get_eth_price(self) -> float | None:
-        price_data = await self.get_price("ETH")
-        return price_data.price if price_data else None
-
-    async def validate_price(
-        self,
-        symbol: str,
-        price: float,
-        max_deviation_percent: float = 10.0,
-    ) -> bool:
-        """
-        Validate a price against Chainlink as reference.
-        Returns True if price is within acceptable deviation.
-        """
-        chainlink_price = await self.get_price(symbol)
-        if not chainlink_price:
-            return True  # Can't validate, assume OK
-
-        deviation = abs(price - chainlink_price.price) / chainlink_price.price * 100
-
-        if deviation > max_deviation_percent:
-            logger.warning(
-                f"Price deviation for {symbol}: {deviation:.2f}% "
-                f"(input: {price}, Chainlink: {chainlink_price.price})"
-            )
-            return False
-
-        return True
-
-    def get_feed_address(self, symbol: str) -> str | None:
-        return CHAINLINK_FEEDS.get(symbol.upper())
-
-    def is_supported(self, symbol: str) -> bool:
-        return symbol.upper() in CHAINLINK_FEEDS
 
 
 # Singleton instance

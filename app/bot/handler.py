@@ -285,11 +285,6 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response, parse_mode="Markdown", disable_web_page_preview=True)
 
 
-async def detail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Alias for /status — shows detailed position breakdown."""
-    await status_command(update, context)
-
-
 async def simulate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
@@ -562,7 +557,6 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("add", add_command))
     application.add_handler(CommandHandler("remove", remove_command))
     application.add_handler(CommandHandler("status", status_command))
-    application.add_handler(CommandHandler("detail", detail_command))
     application.add_handler(CommandHandler("simulate", simulate_command))
     application.add_handler(CommandHandler("protocols", protocols_command))
     application.add_handler(CommandHandler("set_threshold", set_threshold_command))

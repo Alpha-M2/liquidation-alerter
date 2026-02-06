@@ -319,36 +319,6 @@ def calculate_max_borrow(
     return max(0.0, additional_borrow)
 
 
-def calculate_liquidation_price(
-    position: Position,
-    current_price: float | None = None,
-) -> float | None:
-    """
-    Calculate the price at which a position would be liquidated.
-
-    Returns the price of the collateral asset at which HF = 1.0
-    """
-    if position.total_debt_usd == 0 or position.total_collateral_usd == 0:
-        return None
-
-    if current_price is None:
-        return None
-
-    # At liquidation: HF = 1.0
-    # 1.0 = (collateral_value * threshold) / debt
-    # collateral_value = debt / threshold
-    # collateral_amount * liquidation_price = debt / threshold
-    # liquidation_price = debt / (threshold * collateral_amount)
-
-    # Assuming collateral is priced at current_price
-    collateral_amount = position.total_collateral_usd / current_price
-
-    liquidation_price = position.total_debt_usd / (
-        position.liquidation_threshold * collateral_amount
-    )
-
-    return liquidation_price
-
 
 def calculate_price_drop_to_liquidation(
     position: Position,

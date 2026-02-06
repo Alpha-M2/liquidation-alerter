@@ -7,7 +7,7 @@ with caching to minimize RPC calls.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict
 
 from web3 import AsyncWeb3
 
@@ -405,42 +405,6 @@ class TokenMetadataService:
         except Exception:
             return None
 
-    async def get_metadata_batch(
-        self,
-        addresses: List[str],
-        chain: str = "ethereum",
-        web3: AsyncWeb3 | None = None,
-    ) -> Dict[str, TokenMetadata]:
-        """Get metadata for multiple tokens.
-
-        Args:
-            addresses: List of token addresses
-            chain: Chain name
-            web3: Optional Web3 instance for RPC calls
-
-        Returns:
-            Dict mapping address -> TokenMetadata
-        """
-        result = {}
-        for address in addresses:
-            metadata = await self.get_metadata(address, chain, web3)
-            if metadata:
-                result[self._normalize_address(address)] = metadata
-        return result
-
-    def get_known_token(self, address: str, chain: str = "ethereum") -> TokenMetadata | None:
-        """Get metadata for a known token (no RPC call).
-
-        Args:
-            address: Token contract address
-            chain: Chain name
-
-        Returns:
-            TokenMetadata or None if not in hardcoded list
-        """
-        checksum_address = self._normalize_address(address)
-        chain_tokens = self.KNOWN_TOKENS.get(chain, {})
-        return chain_tokens.get(checksum_address)
 
 
 # Singleton instance

@@ -4,10 +4,6 @@ Prometheus metrics for the DeFi Liquidation Alerter.
 Exposes key application metrics for monitoring and observability.
 """
 
-import time
-from functools import wraps
-from typing import Callable
-
 from prometheus_client import (
     Counter,
     Gauge,
@@ -189,86 +185,3 @@ def get_content_type() -> str:
     return CONTENT_TYPE_LATEST
 
 
-def track_rpc_request(endpoint: str, method: str):
-    """Decorator to track RPC request metrics."""
-    def decorator(func: Callable):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            start_time = time.time()
-            status = "success"
-            try:
-                result = await func(*args, **kwargs)
-                return result
-            except Exception as e:
-                status = "error"
-                RPC_ERRORS_TOTAL.labels(endpoint=endpoint, error_type=type(e).__name__).inc()
-                raise
-            finally:
-                duration = time.time() - start_time
-                RPC_REQUESTS_TOTAL.labels(endpoint=endpoint, method=method, status=status).inc()
-                RPC_REQUEST_DURATION_SECONDS.labels(endpoint=endpoint, method=method).observe(duration)
-        return wrapper
-    return decorator
-
-
-def record_position_metrics(protocol: str, wallet: str, health_factor: float, collateral_usd: float, debt_usd: float):
-    """Record metrics for a position."""
-    # Use short wallet address for labels
-    short_wallet = f"{wallet[:6]}...{wallet[-4:]}"
-
-    POSITIONS_CHECKED_TOTAL.labels(protocol=protocol).inc()
-    POSITION_HEALTH_FACTOR.labels(protocol=protocol, wallet=short_wallet).set(health_factor)
-    POSITION_COLLATERAL_USD.labels(protocol=protocol, wallet=short_wallet).set(collateral_usd)
-    POSITION_DEBT_USD.labels(protocol=protocol, wallet=short_wallet).set(debt_usd)
-
-
-def record_alert_sent(protocol: str, severity: str):
-    """Record that an alert was sent."""
-    ALERTS_SENT_TOTAL.labels(protocol=protocol, severity=severity).inc()
-
-
-def record_alert_failed(protocol: str, reason: str):
-    """Record that an alert failed to send."""
-    ALERTS_FAILED_TOTAL.labels(protocol=protocol, reason=reason).inc()
-
-
-def record_liquidation(protocol: str, value_usd: float):
-    """Record a detected liquidation."""
-    LIQUIDATIONS_DETECTED_TOTAL.labels(protocol=protocol).inc()
-    LIQUIDATION_VALUE_USD_TOTAL.labels(protocol=protocol).inc(value_usd)
-
-
-def record_cascade_alert(protocol: str, severity: str):
-    """Record a cascade alert."""
-    CASCADE_ALERTS_TOTAL.labels(protocol=protocol, severity=severity).inc()
-
-
-def update_gas_price(gwei: float):
-    """Update current gas price metric."""
-    GAS_PRICE_GWEI.set(gwei)
-
-
-def update_user_counts(active_users: int, monitored_wallets: int):
-    """Update user count metrics."""
-    ACTIVE_USERS.set(active_users)
-    MONITORED_WALLETS.set(monitored_wallets)
-
-
-class MonitoringCycleTimer:
-    """Context manager for timing monitoring cycles."""
-
-    def __init__(self):
-        self._start_time = None
-
-    def __enter__(self):
-        self._start_time = time.time()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        duration = time.time() - self._start_time
-        MONITORING_CYCLE_DURATION_SECONDS.observe(duration)
-
-        status = "success" if exc_type is None else "error"
-        MONITORING_CYCLES_TOTAL.labels(status=status).inc()
-
-        return False  # Don't suppress exceptions

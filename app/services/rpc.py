@@ -246,16 +246,3 @@ def get_web3() -> AsyncWeb3:
     return _web3_instance
 
 
-class Web3Provider:
-    """Legacy compatibility class."""
-
-    _instance: AsyncWeb3 | None = None
-
-    @classmethod
-    def get_web3(cls) -> AsyncWeb3:
-        return get_web3()
-
-    @classmethod
-    async def is_connected(cls) -> bool:
-        web3 = cls.get_web3()
-        return await web3.is_connected()

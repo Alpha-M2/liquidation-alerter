@@ -213,13 +213,6 @@ class UniswapV3Oracle:
         twap_data = await self.get_twap(symbol, twap_seconds=1)
         return twap_data.spot_price if twap_data else None
 
-    def is_supported(self, symbol: str) -> bool:
-        """Check if we have a Uniswap pool for this symbol."""
-        return (
-            f"{symbol}-WETH" in UNISWAP_V3_POOLS
-            or f"{symbol}-USDC" in UNISWAP_V3_POOLS
-            or symbol == "WETH"
-        )
 
 
 # Singleton
