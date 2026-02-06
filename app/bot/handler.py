@@ -286,24 +286,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def detail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show detailed position breakdown with per-asset information."""
-    chat_id = update.effective_chat.id
-
-    user_data = await _get_user_wallets_and_thresholds(chat_id)
-    if not user_data:
-        await update.message.reply_text(format_no_wallets(), parse_mode="Markdown")
-        return
-
-    wallets, warning_threshold, critical_threshold = user_data
-
-    if not _engine:
-        await update.message.reply_text("Monitoring engine not initialized.")
-        return
-
-    response = await _build_position_response(
-        wallets, warning_threshold, critical_threshold, detailed=True
-    )
-    await update.message.reply_text(response, parse_mode="Markdown", disable_web_page_preview=True)
+    """Alias for /status — shows detailed position breakdown."""
+    await status_command(update, context)
 
 
 async def simulate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

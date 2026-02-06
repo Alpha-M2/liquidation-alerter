@@ -14,7 +14,7 @@ from web3.eth import AsyncEth
 
 from app.protocols.base import ProtocolAdapter, Position, CollateralAsset, DebtAsset
 from app.config import get_settings
-from app.services.cache import get_position_cache
+from app.services.cache import get_position_cache, get_reserve_cache, TTLCache
 from app.services.token_metadata import get_token_metadata_service
 
 logger = logging.getLogger(__name__)
@@ -170,6 +170,9 @@ class CompoundV3Adapter(ProtocolAdapter):
             abi=COMET_ABI,
         )
         self._position_cache = get_position_cache()
+        self._reserve_cache = get_reserve_cache()
+        self._asset_info_cache: TTLCache = TTLCache(default_ttl_seconds=3600.0)
+        self._price_cache: TTLCache = TTLCache(default_ttl_seconds=120.0)
 
     @property
     def name(self) -> str:
@@ -179,6 +182,55 @@ class CompoundV3Adapter(ProtocolAdapter):
     @property
     def chain(self) -> str:
         return self._chain
+
+    async def _get_num_assets(self) -> int:
+        """Get number of collateral assets, cached."""
+        cache_key = f"{self._chain}:num_assets"
+        cached = self._asset_info_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        num = await self._comet_contract.functions.numAssets().call()
+        self._asset_info_cache.set(cache_key, num)
+        return num
+
+    async def _get_asset_info(self, index: int) -> tuple:
+        """Get asset info by index, cached (static data)."""
+        cache_key = f"{self._chain}:asset_info:{index}"
+        cached = self._asset_info_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        info = await self._comet_contract.functions.getAssetInfo(index).call()
+        self._asset_info_cache.set(cache_key, info)
+        return info
+
+    async def _get_price(self, price_feed: str) -> int:
+        """Get price from feed, cached with short TTL."""
+        cache_key = f"{self._chain}:price:{price_feed}"
+        cached = self._price_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        price = await self._comet_contract.functions.getPrice(price_feed).call()
+        self._price_cache.set(cache_key, price)
+        return price
+
+    async def _get_base_token_info(self) -> dict:
+        """Get base token static info, cached."""
+        cache_key = f"{self._chain}:base_token_info"
+        cached = self._asset_info_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        base_token_address = await self._comet_contract.functions.baseToken().call()
+        base_scale = await self._comet_contract.functions.baseScale().call()
+        base_price_feed = await self._comet_contract.functions.baseTokenPriceFeed().call()
+        base_decimals = int(math.log10(base_scale)) if base_scale > 1 else 6
+        info = {
+            "address": base_token_address,
+            "scale": base_scale,
+            "decimals": base_decimals,
+            "price_feed": base_price_feed,
+        }
+        self._asset_info_cache.set(cache_key, info)
+        return info
 
     def _rate_to_apy(self, rate_per_second: int) -> float:
         """Convert per-second rate to APY.
@@ -219,12 +271,12 @@ class CompoundV3Adapter(ProtocolAdapter):
             supply_balance_usd = supply_balance / 1e6
 
             # Get collateral balances and calculate total collateral value
-            num_assets = await self._comet_contract.functions.numAssets().call()
+            num_assets = await self._get_num_assets()
             total_collateral_usd = 0.0
             avg_liquidation_factor = 0.0
 
             for i in range(num_assets):
-                asset_info = await self._comet_contract.functions.getAssetInfo(i).call()
+                asset_info = await self._get_asset_info(i)
                 asset_address = asset_info[1]
                 price_feed = asset_info[2]
                 scale = asset_info[3]
@@ -235,7 +287,7 @@ class CompoundV3Adapter(ProtocolAdapter):
                 ).call()
 
                 if collateral_balance > 0:
-                    price = await self._comet_contract.functions.getPrice(price_feed).call()
+                    price = await self._get_price(price_feed)
                     # Price is in 8 decimals, scale converts to base units
                     collateral_value = (collateral_balance * price) / (scale * 1e8)
                     total_collateral_usd += collateral_value
@@ -285,13 +337,16 @@ class CompoundV3Adapter(ProtocolAdapter):
             checksum_address = AsyncWeb3.to_checksum_address(wallet_address)
             token_service = get_token_metadata_service()
 
-            # Get base token info (e.g., USDC)
-            base_token_address = await self._comet_contract.functions.baseToken().call()
+            # Get base token info (cached - static data)
+            base_info = await self._get_base_token_info()
+            base_token_address = base_info["address"]
+            base_scale = base_info["scale"]
+            base_decimals = base_info["decimals"]
+            base_price_feed = base_info["price_feed"]
+
             base_token_meta = await token_service.get_metadata(
                 base_token_address, self._chain, self._web3
             )
-            base_scale = await self._comet_contract.functions.baseScale().call()
-            base_decimals = int(math.log10(base_scale)) if base_scale > 1 else 6
 
             # Get utilization and rates
             utilization = await self._comet_contract.functions.getUtilization().call()
@@ -306,18 +361,17 @@ class CompoundV3Adapter(ProtocolAdapter):
             supply_balance = await self._comet_contract.functions.balanceOf(checksum_address).call()
             borrow_balance = await self._comet_contract.functions.borrowBalanceOf(checksum_address).call()
 
-            # Get base token price
-            base_price_feed = await self._comet_contract.functions.baseTokenPriceFeed().call()
-            base_price = await self._comet_contract.functions.getPrice(base_price_feed).call()
+            # Get base token price (cached)
+            base_price = await self._get_price(base_price_feed)
             base_price_usd = base_price / 1e8  # Price feeds use 8 decimals
 
             # Build collateral assets list
             collateral_assets: List[CollateralAsset] = []
-            num_assets = await self._comet_contract.functions.numAssets().call()
+            num_assets = await self._get_num_assets()
             total_collateral_usd = 0.0
 
             for i in range(num_assets):
-                asset_info = await self._comet_contract.functions.getAssetInfo(i).call()
+                asset_info = await self._get_asset_info(i)
                 asset_address = asset_info[1]
                 price_feed = asset_info[2]
                 scale = asset_info[3]  # 10^decimals
@@ -335,8 +389,8 @@ class CompoundV3Adapter(ProtocolAdapter):
                         asset_address, self._chain, self._web3
                     )
 
-                    # Get price
-                    price = await self._comet_contract.functions.getPrice(price_feed).call()
+                    # Get price (cached)
+                    price = await self._get_price(price_feed)
                     price_usd = price / 1e8
 
                     # Calculate values

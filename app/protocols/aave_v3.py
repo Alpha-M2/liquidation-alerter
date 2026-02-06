@@ -13,7 +13,7 @@ from web3.eth import AsyncEth
 
 from app.protocols.base import ProtocolAdapter, Position, CollateralAsset, DebtAsset
 from app.config import get_settings
-from app.services.cache import get_position_cache
+from app.services.cache import get_position_cache, get_reserve_cache
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +207,7 @@ class AaveV3Adapter(ProtocolAdapter):
             self._ui_data_provider = None
 
         self._position_cache = get_position_cache()
+        self._reserve_cache = get_reserve_cache()
 
     @property
     def name(self) -> str:
@@ -503,10 +504,19 @@ class AaveV3Adapter(ProtocolAdapter):
             checksum_address = AsyncWeb3.to_checksum_address(wallet_address)
             provider_address = AAVE_V3_POOL_ADDRESSES_PROVIDER[self._chain]
 
-            # Fetch reserves data (symbols, prices, APYs, thresholds)
-            reserves_data, base_currency_info = await self._ui_data_provider.functions.getReservesData(
-                provider_address
-            ).call()
+            # Fetch reserves data with caching (global data, not user-specific)
+            cached_reserves = self._reserve_cache.get("aave_v3", self._chain)
+            if cached_reserves is not None:
+                reserves_data = cached_reserves["reserves_data"]
+                base_currency_info = cached_reserves["base_currency_info"]
+            else:
+                reserves_data, base_currency_info = await self._ui_data_provider.functions.getReservesData(
+                    provider_address
+                ).call()
+                self._reserve_cache.set("aave_v3", self._chain, {
+                    "reserves_data": reserves_data,
+                    "base_currency_info": base_currency_info,
+                })
 
             # Fetch user's reserves data (balances, collateral flags)
             user_reserves_data, _ = await self._ui_data_provider.functions.getUserReservesData(
