@@ -59,7 +59,7 @@ This application helps users avoid liquidation by:
 
 ### Performance & Reliability
 - **Smart Polling**: Adaptive check intervals based on position risk level
-- **Position Caching**: TTL-based caching to reduce RPC calls
+- **Multi-Layer Caching**: TTL-based caching for positions (30-60s), reserve data (2min), and asset metadata (1hr) to reduce RPC calls
 - **Reorg Protection**: Confirmation-based state tracking to prevent false alerts
 - **Batch Fetching**: Multicall support for efficient on-chain data retrieval
 
@@ -96,16 +96,16 @@ liquidation-alerter/
 │   │   ├── chainlink.py        # Chainlink oracle integration
 │   │   ├── uniswap_oracle.py   # Uniswap V3 TWAP oracle
 │   │   ├── token_metadata.py   # Token symbol/decimals caching service
-│   │   ├── cache.py            # TTL-based position and reserve caching
+│   │   ├── cache.py            # Multi-layer TTL caching (positions, reserves, metadata)
 │   │   ├── multicall.py        # Batch RPC calls for efficiency
 │   │   ├── reorg.py            # Chain reorganization protection
 │   │   └── metrics.py          # Prometheus metrics
 │   │
 │   └── bot/
 │       ├── handler.py          # Telegram command handlers
-│       └── messages.py         # Message formatting with per-asset display
+│       └── messages.py         # Message formatting with table-style display
 │
-├── tests/                      # Test suite (88 tests)
+├── tests/                      # Test suite (100 tests)
 ├── pyproject.toml              # Project dependencies
 └── README.md
 ```
@@ -183,8 +183,8 @@ CRITICAL_HEALTH_FACTOR_THRESHOLD=1.1
 | `/help` | Show available commands | `/help` |
 | `/add <address>` | Add a wallet to monitor | `/add 0x1234...abcd` |
 | `/remove <address>` | Remove a wallet from monitoring | `/remove 0x1234...abcd` |
-| `/status` | View current positions across all chains | `/status` |
-| `/detail` | View detailed breakdown with per-asset info | `/detail` |
+| `/status` | View detailed positions with per-asset table breakdown | `/status` |
+| `/detail` | Alias for `/status` | `/detail` |
 | `/simulate [%]` | Simulate price impact on positions | `/simulate -20` |
 | `/set_threshold <value>` | Set personal alert threshold | `/set_threshold 1.3` |
 | `/pause` | Pause all alerts | `/pause` |
@@ -193,46 +193,39 @@ CRITICAL_HEALTH_FACTOR_THRESHOLD=1.1
 | `/export` | Download position history as CSV | `/export` |
 | `/history` | View historical health factor analysis | `/history` |
 
-## Detailed Position Display
+## Position Display
 
-The `/detail` command provides a comprehensive view of your positions:
+The `/status` command (and its alias `/detail`) provides a comprehensive table-formatted view of your positions:
 
 ```
 🟢 Aave V3 (Ethereum) | 0x1234...abcd
 
-Health Factor: 2.15 | Status: Healthy
-Net APY: +1.24%
+Health Factor: 2.15 🟢
+Net APY:       +1.2%
 
-📥 Collateral ($45,230.50)
-💎 WETH 🔒
-   12.5000 WETH ($41,250.00)
-   LTV: 80%, Liq: 82.5%, APY: +2.10%
-💵 USDC 🔒
-   3,980.50 USDC ($3,980.50)
-   LTV: 75%, Liq: 80%, APY: +4.50%
+📈 Supplied
+Asset     Balance      Value    APY
+WETH        12.50    $41K  +2.1%
+USDC      3.98K     $4K  +4.5%
 
-📤 Debt ($18,500.00)
-💵 USDC 📊
-   18,500.00 USDC ($18,500.00)
-   Variable, APY: -5.20%
+💸 Borrowed
+Asset       Debt      Value    APY
+USDC     18.50K    $19K  -5.2%
 
-Liq. Threshold: 82% | Available: $12,450.00
-
-Position is healthy with comfortable safety margin.
+Price Drop to Liq: 54.2%
+Healthy: Health factor at 2.15.
 ```
 
 ### Asset Information Displayed
 
 | Field | Description |
 |-------|-------------|
-| Token Balance | Exact amount in native token units |
-| USD Value | Current value at market price |
-| LTV | Loan-to-Value ratio (max borrow power) |
-| Liq. Threshold | Liquidation threshold percentage |
-| Supply APY | Interest earned on supplied assets |
-| Borrow APY | Interest paid on borrowed assets |
+| Asset | Token symbol (up to 7 characters) |
+| Balance | Token amount in compact form (e.g., 12.50, 3.98K) |
+| Value | USD value in short form (e.g., $41K, $1.2M) |
+| APY | Supply APY (+) or Borrow APY (-) |
 | Net APY | Overall yield after borrow costs |
-| Interest Mode | Variable or Stable rate (Aave) |
+| Price Drop to Liq | Percentage price drop that would trigger liquidation |
 
 ## Health Factor System
 
