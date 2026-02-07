@@ -53,6 +53,7 @@ class SmartPollingManager:
     MEDIUM_INTERVAL = 120       # HF 1.3 - 2.0
     LOW_INTERVAL = 300          # HF > 2.0
     NO_POSITION_INTERVAL = 600  # No active position
+    MAX_TRACKED_POSITIONS = 10_000
 
     def __init__(self):
         # Track last check time for each wallet:protocol combination
@@ -113,6 +114,13 @@ class SmartPollingManager:
         key = make_position_key(wallet_address, protocol)
         self._last_check[key] = time.time()
         self._health_factors[key] = health_factor
+
+        # Evict oldest entries if exceeding limit
+        if len(self._last_check) > self.MAX_TRACKED_POSITIONS:
+            oldest_keys = sorted(self._last_check, key=self._last_check.get)
+            for k in oldest_keys[: len(oldest_keys) - self.MAX_TRACKED_POSITIONS]:
+                del self._last_check[k]
+                self._health_factors.pop(k, None)
 
     def get_wallets_to_check(
         self,
@@ -290,18 +298,41 @@ class MonitoringEngine:
 
     async def start(self):
         self._running = True
+        self._consecutive_errors = 0
         logger.info("Monitoring engine started")
 
         while self._running:
             try:
-                await self._monitor_cycle()
+                await asyncio.wait_for(
+                    self._monitor_cycle(),
+                    timeout=300,  # 5 minute hard limit per cycle
+                )
+                self._consecutive_errors = 0
+            except asyncio.TimeoutError:
+                self._consecutive_errors += 1
+                logger.error("Monitoring cycle timed out after 300s")
             except Exception as e:
+                self._consecutive_errors += 1
                 logger.error(f"Error in monitoring cycle: {e}")
 
-            await asyncio.sleep(self._settings.monitoring_interval_seconds)
+            # Exponential backoff on consecutive failures (cap at 5 min)
+            if self._consecutive_errors > 0:
+                backoff = min(
+                    self._settings.monitoring_interval_seconds * (2 ** min(self._consecutive_errors, 5)),
+                    300,
+                )
+                logger.warning(f"Backing off {backoff}s after {self._consecutive_errors} consecutive errors")
+                await asyncio.sleep(backoff)
+            else:
+                await asyncio.sleep(self._settings.monitoring_interval_seconds)
 
     async def stop(self):
         self._running = False
+        # Close all Web3 provider sessions
+        for chain, web3 in self._web3_instances.items():
+            provider = web3.provider
+            if hasattr(provider, '_request_session') and provider._request_session:
+                await provider._request_session.close()
         logger.info("Monitoring engine stopped")
 
     async def _monitor_cycle(self):

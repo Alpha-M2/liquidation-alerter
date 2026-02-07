@@ -567,13 +567,15 @@ class AaveV3Adapter(ProtocolAdapter):
 
             # Calculate weighted liquidation threshold
             if total_collateral_usd > 0:
-                weighted_liq_threshold = sum(
-                    a.liquidation_threshold * a.balance_usd
-                    for a in collateral_assets if a.is_collateral_enabled
-                ) / sum(
-                    a.balance_usd
-                    for a in collateral_assets if a.is_collateral_enabled
-                ) if any(a.is_collateral_enabled for a in collateral_assets) else 0.8
+                enabled_collateral = [a for a in collateral_assets if a.is_collateral_enabled]
+                enabled_sum = sum(a.balance_usd for a in enabled_collateral)
+                if enabled_collateral and enabled_sum > 0:
+                    weighted_liq_threshold = sum(
+                        a.liquidation_threshold * a.balance_usd
+                        for a in enabled_collateral
+                    ) / enabled_sum
+                else:
+                    weighted_liq_threshold = 0.8
             else:
                 weighted_liq_threshold = 0.8
 

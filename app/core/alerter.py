@@ -86,10 +86,25 @@ class GasAwareAlerter:
     # Rapid deterioration threshold
     DETERIORATION_THRESHOLD_PERCENT = 10.0
 
+    # Maximum tracked positions to prevent unbounded memory growth
+    MAX_TRACKED_POSITIONS = 10_000
+
     def __init__(self, bot: Bot):
         self._bot = bot
         self._alert_history: Dict[str, AlertRecord] = {}
         self._health_history: Dict[str, HealthHistory] = {}
+
+    def _evict_oldest(self):
+        """Evict oldest entries if dicts exceed max size."""
+        if len(self._alert_history) > self.MAX_TRACKED_POSITIONS:
+            # Remove entries with oldest last_alert_time
+            sorted_keys = sorted(
+                self._alert_history,
+                key=lambda k: self._alert_history[k].last_alert_time,
+            )
+            for key in sorted_keys[: len(sorted_keys) - self.MAX_TRACKED_POSITIONS]:
+                del self._alert_history[key]
+                self._health_history.pop(key, None)
 
     def _get_alert_key(self, chat_id: int, wallet_address: str, protocol: str) -> str:
         """Generate key for alert history (includes chat_id for per-user tracking)."""
@@ -267,6 +282,8 @@ class GasAwareAlerter:
                     alert_count=0,
                 )).alert_count + 1,
             )
+
+            self._evict_oldest()
 
             logger.info(
                 f"Alert sent to {chat_id} for {position.wallet_address} "

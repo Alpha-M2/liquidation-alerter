@@ -55,17 +55,27 @@ class Settings(BaseSettings):
         description="Database connection URL",
     )
     monitoring_interval_seconds: int = Field(
-        default=60, description="Interval between monitoring cycles"
+        default=60, ge=1, description="Interval between monitoring cycles"
     )
     health_factor_threshold: float = Field(
-        default=1.5, description="Health factor threshold for warnings"
+        default=1.5, gt=0, description="Health factor threshold for warnings"
     )
     critical_health_factor_threshold: float = Field(
-        default=1.1, description="Critical health factor threshold for urgent alerts"
+        default=1.1, gt=0, description="Critical health factor threshold for urgent alerts"
     )
     metrics_port: int = Field(
-        default=8080, description="Port for Prometheus metrics endpoint"
+        default=8080, ge=1, le=65535, description="Port for Prometheus metrics endpoint"
     )
+
+    @model_validator(mode="after")
+    def validate_thresholds(self) -> Self:
+        """Ensure critical threshold is below warning threshold."""
+        if self.critical_health_factor_threshold >= self.health_factor_threshold:
+            raise ValueError(
+                f"critical_health_factor_threshold ({self.critical_health_factor_threshold}) "
+                f"must be less than health_factor_threshold ({self.health_factor_threshold})"
+            )
+        return self
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

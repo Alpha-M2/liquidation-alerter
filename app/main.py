@@ -7,7 +7,7 @@ This module initializes and runs all application components:
 - Position monitoring engine
 
 Usage:
-    python -m app.main
+python -m app.main
 """
 
 import asyncio
@@ -25,6 +25,11 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
+
+# Suppress noisy third-party loggers (web3 dumps raw RPC responses at DEBUG/INFO)
+for _noisy in ("web3", "httpx", "urllib3", "asyncio", "aiohttp"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 
@@ -122,6 +127,9 @@ async def main():
 
     # Cleanup metrics server
     await metrics_runner.cleanup()
+
+    # Dispose database engine (release connection pool)
+    await db.dispose()
 
     logger.info("Shutdown complete")
 

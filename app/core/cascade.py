@@ -179,28 +179,49 @@ class LiquidationCascadeDetector:
         protocol: str,
         event: dict,
     ) -> LiquidationEvent | None:
-        """Parse a raw liquidation event into structured data."""
+        """Parse a raw liquidation event into structured data.
+
+        Aave V3 LiquidationCall event layout:
+        - topics[0]: event signature
+        - topics[1]: collateralAsset (indexed, address)
+        - topics[2]: debtAsset (indexed, address)
+        - topics[3]: user/borrower (indexed, address)
+        - data: debtToCover (uint256) | liquidatedCollateralAmount (uint256) | liquidator (address) | receiveAToken (bool)
+        """
         try:
-            # Extract basic info (simplified - actual parsing depends on protocol)
             tx_hash = event.get("transactionHash", b"").hex()
             block_number = event.get("blockNumber", 0)
-
-            # Topics contain indexed parameters
             topics = event.get("topics", [])
             data = event.get("data", b"")
 
-            # For now, estimate value based on data length
-            # In production, would decode the actual event data
-            estimated_value = len(data) * 100  # Rough estimate
+            # Decode non-indexed data: debtToCover (uint256) | liquidatedCollateralAmount (uint256) | ...
+            # Each uint256 is 32 bytes
+            if isinstance(data, (bytes, bytearray)) and len(data) >= 64:
+                debt_to_cover_raw = int.from_bytes(data[0:32], "big")
+                collateral_seized_raw = int.from_bytes(data[32:64], "big")
+                # Assume 8-decimal USD pricing (Chainlink standard); divide by 1e8
+                # This gives a rough USD estimate - actual value depends on token decimals
+                # For cascade detection, order of magnitude is what matters
+                debt_covered_usd = debt_to_cover_raw / 1e8
+                collateral_seized_usd = collateral_seized_raw / 1e8
+            else:
+                debt_covered_usd = 0
+                collateral_seized_usd = 0
+
+            borrower = topics[3].hex() if len(topics) > 3 else (topics[2].hex() if len(topics) > 2 else "")
+            liquidator = ""
+            # Liquidator is in data bytes 64-96 (address padded to 32 bytes)
+            if isinstance(data, (bytes, bytearray)) and len(data) >= 96:
+                liquidator = "0x" + data[76:96].hex()
 
             return LiquidationEvent(
                 protocol=protocol,
                 block_number=block_number,
                 tx_hash=tx_hash,
-                liquidator=topics[1].hex() if len(topics) > 1 else "",
-                borrower=topics[2].hex() if len(topics) > 2 else "",
-                debt_covered_usd=estimated_value,
-                collateral_seized_usd=estimated_value * 1.1,
+                liquidator=liquidator,
+                borrower=borrower,
+                debt_covered_usd=debt_covered_usd,
+                collateral_seized_usd=collateral_seized_usd,
                 timestamp=datetime.utcnow(),
             )
 

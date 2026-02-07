@@ -62,6 +62,9 @@ class ReorgSafeStateTracker:
     # Number of historical states to track
     STATE_HISTORY_SIZE = 10
 
+    # Maximum tracked positions to prevent unbounded memory growth
+    MAX_TRACKED_POSITIONS = 10_000
+
     def __init__(self):
         # Track state history per wallet:protocol
         # Key: "wallet_address:protocol" -> deque of PositionState
@@ -73,6 +76,18 @@ class ReorgSafeStateTracker:
 
         # Track current block numbers per chain
         self._block_numbers: Dict[str, int] = {}
+
+    def _evict_oldest(self):
+        """Evict oldest entries if dicts exceed max size."""
+        if len(self._confirmed_states) > self.MAX_TRACKED_POSITIONS:
+            # Remove entries with oldest confirmed_at_block
+            sorted_keys = sorted(
+                self._confirmed_states,
+                key=lambda k: self._confirmed_states[k].confirmed_at_block,
+            )
+            for key in sorted_keys[: len(sorted_keys) - self.MAX_TRACKED_POSITIONS]:
+                del self._confirmed_states[key]
+                self._state_history.pop(key, None)
 
     def update_block_number(self, chain: str, block_number: int):
         """Update the current block number for a chain."""
@@ -165,6 +180,7 @@ class ReorgSafeStateTracker:
             )
 
             self._confirmed_states[key] = confirmed
+            self._evict_oldest()
             return is_new, confirmed
 
         return False, self._confirmed_states.get(key)

@@ -9,6 +9,8 @@ import csv
 import io
 import logging
 import re
+import time
+from collections import defaultdict
 from datetime import datetime
 
 from telegram import Update
@@ -46,8 +48,27 @@ from app.bot.messages import (
 
 logger = logging.getLogger(__name__)
 
+TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+RATE_LIMIT_CALLS = 5  # max calls per window
+RATE_LIMIT_WINDOW = 30  # seconds
+
 # Global engine reference - set during app initialization
 _engine: MonitoringEngine | None = None
+
+# Per-user rate limiting for expensive commands
+_user_call_times: dict[int, list[float]] = defaultdict(list)
+
+
+def _is_rate_limited(chat_id: int) -> bool:
+    """Check if a user has exceeded the rate limit for expensive commands."""
+    now = time.time()
+    times = _user_call_times[chat_id]
+    # Prune old entries
+    _user_call_times[chat_id] = [t for t in times if now - t < RATE_LIMIT_WINDOW]
+    if len(_user_call_times[chat_id]) >= RATE_LIMIT_CALLS:
+        return True
+    _user_call_times[chat_id].append(now)
+    return False
 
 
 def set_engine(engine: MonitoringEngine):
@@ -57,6 +78,52 @@ def set_engine(engine: MonitoringEngine):
 
 def is_valid_eth_address(address: str) -> bool:
     return bool(re.match(r"^0x[a-fA-F0-9]{40}$", address))
+
+
+async def _send_long_message(
+    message_obj,
+    text: str,
+    parse_mode: str = "Markdown",
+    disable_web_page_preview: bool = False,
+):
+    """Split and send a message that may exceed Telegram's 4096 char limit."""
+    if len(text) <= TELEGRAM_MAX_MESSAGE_LENGTH:
+        await message_obj.reply_text(
+            text, parse_mode=parse_mode, disable_web_page_preview=disable_web_page_preview,
+        )
+        return
+
+    # Split on section dividers first, then on newlines
+    chunks = []
+    current = ""
+    for section in text.split("\n\n---\n\n"):
+        candidate = (current + "\n\n---\n\n" + section) if current else section
+        if len(candidate) <= TELEGRAM_MAX_MESSAGE_LENGTH:
+            current = candidate
+        else:
+            if current:
+                chunks.append(current)
+            # If a single section exceeds the limit, split on newlines
+            if len(section) > TELEGRAM_MAX_MESSAGE_LENGTH:
+                lines = section.split("\n")
+                current = ""
+                for line in lines:
+                    candidate = (current + "\n" + line) if current else line
+                    if len(candidate) > TELEGRAM_MAX_MESSAGE_LENGTH:
+                        if current:
+                            chunks.append(current)
+                        current = line[:TELEGRAM_MAX_MESSAGE_LENGTH]
+                    else:
+                        current = candidate
+            else:
+                current = section
+    if current:
+        chunks.append(current)
+
+    for chunk in chunks:
+        await message_obj.reply_text(
+            chunk, parse_mode=parse_mode, disable_web_page_preview=disable_web_page_preview,
+        )
 
 
 async def get_or_create_user(chat_id: int) -> User:
@@ -268,6 +335,10 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show basic position status for all monitored wallets."""
     chat_id = update.effective_chat.id
 
+    if _is_rate_limited(chat_id):
+        await update.message.reply_text("Too many requests. Please wait a moment.")
+        return
+
     user_data = await _get_user_wallets_and_thresholds(chat_id)
     if not user_data:
         await update.message.reply_text(format_no_wallets(), parse_mode="Markdown")
@@ -279,14 +350,23 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Monitoring engine not initialized.")
         return
 
-    response = await _build_position_response(
-        wallets, warning_threshold, critical_threshold, detailed=True
-    )
-    await update.message.reply_text(response, parse_mode="Markdown", disable_web_page_preview=True)
+    try:
+        response = await _build_position_response(
+            wallets, warning_threshold, critical_threshold, detailed=True
+        )
+    except Exception as e:
+        logger.error(f"Error fetching positions for chat {chat_id}: {e}")
+        await update.message.reply_text("Failed to fetch positions. Please try again later.")
+        return
+    await _send_long_message(update.message, response, disable_web_page_preview=True)
 
 
 async def simulate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+
+    if _is_rate_limited(chat_id):
+        await update.message.reply_text("Too many requests. Please wait a moment.")
+        return
 
     price_change = None
     if context.args:
@@ -318,28 +398,33 @@ async def simulate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     messages = []
 
-    for wallet in wallets:
-        positions = await _engine.get_positions_for_wallet(wallet.address)
+    try:
+        for wallet in wallets:
+            positions = await _engine.get_positions_for_wallet(wallet.address)
 
-        for position in positions:
-            short_addr = f"{position.wallet_address[:6]}...{position.wallet_address[-4:]}"
-            header = f"*{position.protocol}* | `{short_addr}`\n\n"
+            for position in positions:
+                short_addr = f"{position.wallet_address[:6]}...{position.wallet_address[-4:]}"
+                header = f"*{position.protocol}* | `{short_addr}`\n\n"
 
-            if price_change is not None:
-                sim = simulate_price_impact(position, price_change)
-                emoji = "💀" if sim.would_liquidate else "✅"
-                result = f"{emoji} At {price_change:+.0f}%: HF = "
-                result += "LIQUIDATED" if sim.would_liquidate else f"{sim.new_health_factor:.2f}"
-                messages.append(header + result)
-            else:
-                simulations = run_stress_test(position)
-                messages.append(header + format_simulation_results(simulations))
+                if price_change is not None:
+                    sim = simulate_price_impact(position, price_change)
+                    emoji = "💀" if sim.would_liquidate else "✅"
+                    result = f"{emoji} At {price_change:+.0f}%: HF = "
+                    result += "LIQUIDATED" if sim.would_liquidate else f"{sim.new_health_factor:.2f}"
+                    messages.append(header + result)
+                else:
+                    simulations = run_stress_test(position)
+                    messages.append(header + format_simulation_results(simulations))
 
-            prediction = predict_liquidation(position)
-            messages.append(format_prediction(prediction))
+                prediction = predict_liquidation(position)
+                messages.append(format_prediction(prediction))
+    except Exception as e:
+        logger.error(f"Error running simulation for chat {chat_id}: {e}")
+        await update.message.reply_text("Failed to run simulation. Please try again later.")
+        return
 
     response = "\n\n---\n\n".join(messages) if messages else "No positions to simulate."
-    await update.message.reply_text(response, parse_mode="Markdown")
+    await _send_long_message(update.message, response)
 
 
 async def protocols_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

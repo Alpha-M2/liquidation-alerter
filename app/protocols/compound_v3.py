@@ -256,7 +256,7 @@ class CompoundV3Adapter(ProtocolAdapter):
         base_token_address = await self._comet_contract.functions.baseToken().call()
         base_scale = await self._comet_contract.functions.baseScale().call()
         base_price_feed = await self._comet_contract.functions.baseTokenPriceFeed().call()
-        base_decimals = int(math.log10(base_scale)) if base_scale > 1 else 6
+        base_decimals = round(math.log10(base_scale)) if base_scale > 1 else 6
         info = {
             "address": base_token_address,
             "scale": base_scale,
@@ -314,7 +314,7 @@ class CompoundV3Adapter(ProtocolAdapter):
             # Get collateral balances and calculate total collateral value
             num_assets = await self._get_num_assets()
             total_collateral_usd = 0.0
-            avg_liquidation_factor = 0.0
+            weighted_liq_numerator = 0.0
 
             for i in range(num_assets):
                 asset_info = await self._get_asset_info(i)
@@ -332,15 +332,18 @@ class CompoundV3Adapter(ProtocolAdapter):
                     # Price is in 8 decimals, scale converts to base units
                     collateral_value = (collateral_balance * price) / (scale * 1e8)
                     total_collateral_usd += collateral_value
-                    avg_liquidation_factor = max(avg_liquidation_factor, liquidate_collateral_factor)
+                    weighted_liq_numerator += collateral_value * liquidate_collateral_factor
 
             if total_collateral_usd == 0 and borrow_balance_usd == 0 and supply_balance_usd == 0:
                 return None
 
+            # Calculate weighted liquidation factor
+            weighted_liq_factor = (weighted_liq_numerator / total_collateral_usd) if total_collateral_usd > 0 else 0.8
+
             # Calculate health factor
             # In Compound V3, health factor = (collateral * liquidation_factor) / debt
-            if borrow_balance_usd > 0 and avg_liquidation_factor > 0:
-                health_factor = (total_collateral_usd * avg_liquidation_factor) / borrow_balance_usd
+            if borrow_balance_usd > 0 and weighted_liq_factor > 0:
+                health_factor = (total_collateral_usd * weighted_liq_factor) / borrow_balance_usd
             else:
                 health_factor = float("inf")
 
@@ -352,7 +355,7 @@ class CompoundV3Adapter(ProtocolAdapter):
                 debt_assets=[],
                 total_collateral_usd=total_collateral_usd + supply_balance_usd,
                 total_debt_usd=borrow_balance_usd,
-                liquidation_threshold=avg_liquidation_factor,
+                liquidation_threshold=weighted_liq_factor,
                 available_borrows_usd=0.0,
                 chain=self._chain,
             )
@@ -435,7 +438,7 @@ class CompoundV3Adapter(ProtocolAdapter):
                     price_usd = price / 1e8
 
                     # Calculate values
-                    decimals = int(math.log10(scale)) if scale > 1 else 18
+                    decimals = round(math.log10(scale)) if scale > 1 else 18
                     balance_tokens = collateral_balance / scale
                     balance_usd = balance_tokens * price_usd
 
@@ -507,11 +510,12 @@ class CompoundV3Adapter(ProtocolAdapter):
             if total_debt_usd > 0:
                 # Use weighted liquidation factor from actual collateral (not base supply)
                 actual_collateral = [a for a in collateral_assets if a.is_collateral_enabled]
-                if actual_collateral:
+                actual_collateral_sum = sum(a.balance_usd for a in actual_collateral) if actual_collateral else 0
+                if actual_collateral and actual_collateral_sum > 0:
                     weighted_liq_threshold = sum(
                         a.liquidation_threshold * a.balance_usd
                         for a in actual_collateral
-                    ) / sum(a.balance_usd for a in actual_collateral)
+                    ) / actual_collateral_sum
 
                     collateral_for_hf = sum(a.balance_usd for a in actual_collateral)
                     health_factor = (collateral_for_hf * weighted_liq_threshold) / total_debt_usd

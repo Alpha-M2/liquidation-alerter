@@ -149,6 +149,11 @@ class ChainlinkOracle:
             answer = round_data[1]
             updated_at_timestamp = round_data[3]
 
+            # Reject invalid prices (negative or zero from bad oracle data)
+            if answer <= 0:
+                logger.error(f"Chainlink returned invalid price for {symbol}: {answer}")
+                return None
+
             # Convert to standard format
             price = answer / (10**decimals)
             updated_at = datetime.utcfromtimestamp(updated_at_timestamp)

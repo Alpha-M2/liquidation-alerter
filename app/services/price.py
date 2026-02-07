@@ -112,9 +112,19 @@ class MultiSourcePriceService:
         # Try Chainlink first (highest confidence)
         chainlink_price = await self._get_chainlink_price(symbol)
         if chainlink_price and not chainlink_price.is_stale:
-            # Optionally validate against secondary source
+            # Validate against secondary source; downgrade confidence if deviation detected
             if validate:
-                await self._validate_price(symbol, chainlink_price.price)
+                is_valid = await self._validate_price(symbol, chainlink_price.price)
+                if not is_valid:
+                    chainlink_price = UnifiedPrice(
+                        symbol=chainlink_price.symbol,
+                        price=chainlink_price.price,
+                        source=chainlink_price.source,
+                        is_stale=chainlink_price.is_stale,
+                        staleness_seconds=chainlink_price.staleness_seconds,
+                        timestamp=chainlink_price.timestamp,
+                        confidence=0.5,  # Downgraded due to cross-source deviation
+                    )
             return chainlink_price
 
         # Try Uniswap TWAP (medium confidence)
@@ -130,9 +140,16 @@ class MultiSourcePriceService:
             return coingecko_price
 
         # If Chainlink was stale but available, use it as last resort
+        # Reject if excessively stale (>2h for volatile, >48h for stablecoins)
         if chainlink_price:
-            logger.warning(f"Using stale Chainlink price for {symbol}")
-            return chainlink_price
+            max_staleness = 172800 if chainlink_price.staleness_seconds and symbol in (
+                "USDC", "USDT", "DAI", "FRAX", "LUSD", "GUSD",
+            ) else 7200
+            if chainlink_price.staleness_seconds and chainlink_price.staleness_seconds > max_staleness:
+                logger.error(f"Chainlink price for {symbol} too stale ({chainlink_price.staleness_seconds}s), rejecting")
+            else:
+                logger.warning(f"Using stale Chainlink price for {symbol}")
+                return chainlink_price
 
         logger.error(f"No price available for {symbol}")
         return None
@@ -214,9 +231,11 @@ class MultiSourcePriceService:
 
     async def _validate_price(self, symbol: str, price: float) -> bool:
         """Validate price against secondary sources."""
+        if price <= 0:
+            return False
         # Try to get a second source for validation
         uniswap_price = await self._uniswap.get_spot_price(symbol)
-        if uniswap_price:
+        if uniswap_price and uniswap_price > 0:
             deviation = abs(price - uniswap_price) / price * 100
             if deviation > self.MAX_DEVIATION_PERCENT:
                 logger.warning(
