@@ -54,6 +54,7 @@ class Position:
     available_borrows_usd: float
     chain: str = "ethereum"       # Chain name: "ethereum", "arbitrum", "base", "optimism"
     net_apy: float | None = None  # Net APY (supply - borrow weighted)
+    detail_error: str | None = None  # Set when detailed fetch failed and basic fallback was used
 
 
 class ProtocolAdapter(ABC):

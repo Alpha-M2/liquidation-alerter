@@ -11,6 +11,7 @@ import logging
 import time
 from typing import Any, Dict, List, Tuple
 
+from aiohttp import ClientTimeout
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from telegram import Bot
@@ -169,18 +170,6 @@ class MonitoringEngine:
         self._bot = bot
         self._alerter = GasAwareAlerter(bot)
         self._price_service = MultiSourcePriceService()
-        self._adapters: List[ProtocolAdapter] = [
-            # Aave V3 adapters for each chain
-            AaveV3Adapter(chain="ethereum"),
-            AaveV3Adapter(chain="arbitrum"),
-            AaveV3Adapter(chain="base"),
-            AaveV3Adapter(chain="optimism"),
-            # Compound V3 adapters for each chain
-            CompoundV3Adapter(chain="ethereum"),
-            CompoundV3Adapter(chain="arbitrum"),
-            CompoundV3Adapter(chain="base"),
-            CompoundV3Adapter(chain="optimism"),
-        ]
         self._running = False
         self._settings = get_settings()
         self._gas_price_gwei: float | None = None
@@ -189,29 +178,52 @@ class MonitoringEngine:
         self._cascade_check_interval = 5  # Check every 5 cycles
         self._cycle_count = 0
 
-        # Initialize Web3 instances and batch fetchers for each chain
+        # Create one shared Web3 instance per chain (used by all adapters + batch fetchers)
         self._web3_instances: Dict[str, AsyncWeb3] = {}
+        chains = ["ethereum", "arbitrum", "base", "optimism"]
+        for chain in chains:
+            rpc_url = self._settings.get_rpc_url(chain)
+            self._web3_instances[chain] = AsyncWeb3(
+                AsyncHTTPProvider(
+                    rpc_url,
+                    request_kwargs={"timeout": ClientTimeout(total=15)},
+                ),
+                modules={"eth": (AsyncEth,)},
+            )
+
+        # Initialize batch fetchers using shared Web3 instances
         self._batch_fetchers: Dict[str, BatchPositionFetcher] = {}
-        self._init_batch_fetchers()
+        for chain in chains:
+            self._batch_fetchers[chain] = BatchPositionFetcher(self._web3_instances[chain])
+
+        # All adapters share the same Web3 instance per chain
+        self._adapters: List[ProtocolAdapter] = [
+            # Aave V3 adapters for each chain
+            AaveV3Adapter(chain="ethereum", web3=self._web3_instances["ethereum"]),
+            AaveV3Adapter(chain="arbitrum", web3=self._web3_instances["arbitrum"]),
+            AaveV3Adapter(chain="base", web3=self._web3_instances["base"]),
+            AaveV3Adapter(chain="optimism", web3=self._web3_instances["optimism"]),
+            # Compound V3 USDC market adapters for each chain
+            CompoundV3Adapter(chain="ethereum", web3=self._web3_instances["ethereum"]),
+            CompoundV3Adapter(chain="arbitrum", web3=self._web3_instances["arbitrum"]),
+            CompoundV3Adapter(chain="base", web3=self._web3_instances["base"]),
+            CompoundV3Adapter(chain="optimism", web3=self._web3_instances["optimism"]),
+            # Compound V3 WETH market adapters for each chain
+            CompoundV3Adapter(chain="ethereum", market="WETH", web3=self._web3_instances["ethereum"]),
+            CompoundV3Adapter(chain="arbitrum", market="WETH", web3=self._web3_instances["arbitrum"]),
+            CompoundV3Adapter(chain="base", market="WETH", web3=self._web3_instances["base"]),
+            CompoundV3Adapter(chain="optimism", market="WETH", web3=self._web3_instances["optimism"]),
+            # Compound V3 USDT market adapters (3 chains, no Base)
+            CompoundV3Adapter(chain="ethereum", market="USDT", web3=self._web3_instances["ethereum"]),
+            CompoundV3Adapter(chain="arbitrum", market="USDT", web3=self._web3_instances["arbitrum"]),
+            CompoundV3Adapter(chain="optimism", market="USDT", web3=self._web3_instances["optimism"]),
+        ]
 
         # Smart polling manager for adaptive intervals based on risk
         self._polling_manager = SmartPollingManager()
 
         # Reorg-safe state tracker for preventing false alerts
         self._reorg_tracker = get_reorg_tracker()
-
-    def _init_batch_fetchers(self):
-        """Initialize Web3 instances and batch fetchers for each chain."""
-        chains = ["ethereum", "arbitrum", "base", "optimism"]
-
-        for chain in chains:
-            rpc_url = self._settings.get_rpc_url(chain)
-            web3 = AsyncWeb3(
-                AsyncHTTPProvider(rpc_url),
-                modules={"eth": (AsyncEth,)},
-            )
-            self._web3_instances[chain] = web3
-            self._batch_fetchers[chain] = BatchPositionFetcher(web3)
 
     async def _update_block_numbers(self):
         """Fetch current block numbers for all chains in parallel (used for reorg handling)."""
@@ -570,14 +582,7 @@ class MonitoringEngine:
                 if position:
                     return position
             except Exception as e:
-                logger.error(f"Error fetching detailed position from {adapter.name}: {e}")
-                # Try fallback to basic position
-                try:
-                    position = await adapter.get_position(wallet_address)
-                    if position:
-                        return position
-                except Exception:
-                    pass
+                logger.info(f"Detailed+basic fetch failed for {adapter.name}: {e}")
             return None
 
         results = await asyncio.gather(*[_fetch_detailed(a) for a in self._adapters])

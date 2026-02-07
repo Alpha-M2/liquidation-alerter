@@ -137,7 +137,7 @@ class TestCompoundV3Adapter:
         assert adapter.chain == "ethereum"
 
     def test_unsupported_chain(self, mock_web3):
-        with pytest.raises(ValueError, match="Unsupported chain"):
+        with pytest.raises(ValueError, match="No USDC market on chain"):
             CompoundV3Adapter(chain="polygon", web3=mock_web3)
 
     @pytest.mark.asyncio

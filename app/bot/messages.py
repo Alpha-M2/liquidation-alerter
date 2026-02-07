@@ -25,6 +25,13 @@ PROTOCOL_URLS = {
     "Compound V3 (Arbitrum)": "https://app.compound.finance/?market=usdc-arbitrum",
     "Compound V3 (Base)": "https://app.compound.finance/?market=usdc-base",
     "Compound V3 (Optimism)": "https://app.compound.finance/?market=usdc-optimism",
+    "Compound V3 WETH (Ethereum)": "https://app.compound.finance/?market=weth-mainnet",
+    "Compound V3 WETH (Arbitrum)": "https://app.compound.finance/?market=weth-arbitrum",
+    "Compound V3 WETH (Base)": "https://app.compound.finance/?market=weth-base",
+    "Compound V3 WETH (Optimism)": "https://app.compound.finance/?market=weth-optimism",
+    "Compound V3 USDT (Ethereum)": "https://app.compound.finance/?market=usdt-mainnet",
+    "Compound V3 USDT (Arbitrum)": "https://app.compound.finance/?market=usdt-arbitrum",
+    "Compound V3 USDT (Optimism)": "https://app.compound.finance/?market=usdt-optimism",
 }
 
 
@@ -178,6 +185,10 @@ def format_detailed_position_status(
 
     msg += f"```\nHealth Factor: {hf_display} {emoji}\n"
     msg += f"Net APY:       {net_apy_str}\n```\n\n"
+
+    # Show warning if detailed fetch failed
+    if position.detail_error:
+        msg += f"⚠️ _Per-asset breakdown unavailable ({position.detail_error})_\n\n"
 
     # Supplied section
     msg += "📈 *Supplied*\n"
@@ -345,7 +356,9 @@ I'll help you monitor your DeFi positions and alert you before liquidation.
 
 *Supported Protocols:*
 • Aave V3 (Ethereum, Arbitrum, Base, Optimism)
-• Compound V3 (Ethereum, Arbitrum, Base, Optimism)
+• Compound V3 USDC (Ethereum, Arbitrum, Base, Optimism)
+• Compound V3 WETH (Ethereum, Arbitrum, Base, Optimism)
+• Compound V3 USDT (Ethereum, Arbitrum, Optimism)
 
 Get started by adding a wallet with /add
 """.strip()
@@ -365,11 +378,22 @@ def format_protocols_list() -> str:
   • Base - [app.aave.com](https://app.aave.com/?marketName=proto_base_v3)
   • Optimism - [app.aave.com](https://app.aave.com/?marketName=proto_optimism_v3)
 
-🟢 *Compound V3*
+🟢 *Compound V3 (USDC)*
   • Ethereum - [app.compound.finance](https://app.compound.finance/)
   • Arbitrum - [app.compound.finance](https://app.compound.finance/?market=usdc-arbitrum)
   • Base - [app.compound.finance](https://app.compound.finance/?market=usdc-base)
   • Optimism - [app.compound.finance](https://app.compound.finance/?market=usdc-optimism)
+
+🟢 *Compound V3 (WETH)*
+  • Ethereum - [app.compound.finance](https://app.compound.finance/?market=weth-mainnet)
+  • Arbitrum - [app.compound.finance](https://app.compound.finance/?market=weth-arbitrum)
+  • Base - [app.compound.finance](https://app.compound.finance/?market=weth-base)
+  • Optimism - [app.compound.finance](https://app.compound.finance/?market=weth-optimism)
+
+🟢 *Compound V3 (USDT)*
+  • Ethereum - [app.compound.finance](https://app.compound.finance/?market=usdt-mainnet)
+  • Arbitrum - [app.compound.finance](https://app.compound.finance/?market=usdt-arbitrum)
+  • Optimism - [app.compound.finance](https://app.compound.finance/?market=usdt-optimism)
 """.strip()
 
 

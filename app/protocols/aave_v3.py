@@ -8,6 +8,7 @@ per-asset collateral and debt breakdowns with APYs using the UiPoolDataProvider.
 import logging
 from typing import Dict, List, Any
 
+from aiohttp import ClientTimeout
 from web3 import AsyncWeb3, AsyncHTTPProvider
 from web3.eth import AsyncEth
 
@@ -33,12 +34,12 @@ AAVE_V3_POOL_ADDRESSES_PROVIDER = {
     "optimism": "0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb",
 }
 
-# UiPoolDataProviderV3 addresses per chain
+# UiPoolDataProviderV3 addresses per chain (from aave-address-book)
 AAVE_V3_UI_POOL_DATA_PROVIDER = {
-    "ethereum": "0x91c0eA31b49B69Ea18607702c61A09E4Be91B8FE",
-    "arbitrum": "0x145dE30c929a065582da84Cf96F88460dB9745A7",
-    "base": "0x174446a6741300cD2E7C1b1A636Fee99c8F83502",
-    "optimism": "0xbd83DdBE37fc91923d59C8c1E0bDe0CccC332C6f",
+    "ethereum": "0x56b7A1012765C285afAC8b8F25C69Bf10ccfE978",
+    "arbitrum": "0x13c833256BD767da2320d727a3691BAff3770E39",
+    "base": "0xb84A20e848baE3e13897934bB4e74E2225f4546B",
+    "optimism": "0xa6741111f4CcB5162Ec6A825465354Ed8c6F7095",
 }
 
 POOL_ABI = [
@@ -186,7 +187,10 @@ class AaveV3Adapter(ProtocolAdapter):
             self._web3 = web3
         else:
             self._web3 = AsyncWeb3(
-                AsyncHTTPProvider(rpc_url),
+                AsyncHTTPProvider(
+                    rpc_url,
+                    request_kwargs={"timeout": ClientTimeout(total=15)},
+                ),
                 modules={"eth": (AsyncEth,)},
             )
 
@@ -621,9 +625,12 @@ class AaveV3Adapter(ProtocolAdapter):
             return position
 
         except Exception as e:
-            logger.error(f"Error fetching detailed position for {wallet_address} on {self.name}: {e}")
-            # Fallback to basic position
-            return await self.get_position(wallet_address)
+            logger.info(f"Detailed fetch failed for {wallet_address} on {self.name}, falling back to basic: {e}")
+            # Fallback to basic position with error note
+            basic = await self.get_position(wallet_address)
+            if basic:
+                basic.detail_error = f"RPC error: {type(e).__name__}"
+            return basic
 
     async def get_health_factor(self, wallet_address: str) -> float | None:
         position = await self.get_position(wallet_address)

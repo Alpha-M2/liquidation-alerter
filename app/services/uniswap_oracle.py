@@ -129,6 +129,9 @@ class UniswapV3Oracle:
         twap_seconds: int = DEFAULT_TWAP_SECONDS,
     ) -> TWAPPrice | None:
         """Get TWAP price for a token."""
+        if symbol == "ETH":
+            symbol = "WETH"  # Map native ETH to WETH for pool lookup
+
         pool_key = f"{symbol}-WETH"
         pool_data = UNISWAP_V3_POOLS.get(pool_key)
 

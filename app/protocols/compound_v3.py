@@ -9,6 +9,7 @@ import logging
 import math
 from typing import List
 
+from aiohttp import ClientTimeout
 from web3 import AsyncWeb3, AsyncHTTPProvider
 from web3.eth import AsyncEth
 
@@ -25,6 +26,21 @@ COMPOUND_V3_COMET_ADDRESSES = {
     "arbitrum": "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf",
     "base": "0xb125E6687d4313864e53df431d5425969c15Eb2F",
     "optimism": "0x2e44e174f7D53F0212823acC11C01A11d58c5bCB",
+}
+
+# Compound V3 Comet WETH addresses per chain
+COMPOUND_V3_WETH_COMET_ADDRESSES = {
+    "ethereum": "0xA17581A9E3356d9A858b789D68B4d866e593aE94",
+    "arbitrum": "0x6f7D514bbD4aFf3BcD1140B7344b32f063dEe486",
+    "base": "0x46e6b214b524310239732D51387075E0e70970bf",
+    "optimism": "0xE36A30D249f7761327fd973001A32010b521b6Fd",
+}
+
+# Compound V3 Comet USDT addresses per chain
+COMPOUND_V3_USDT_COMET_ADDRESSES = {
+    "ethereum": "0x3Afdc9BCA9213A35503b077a6072F3D0d5AB0840",
+    "arbitrum": "0xd98Be00b5D27fc98112BdE293e487f8D4cA57d07",
+    "optimism": "0x995E394b8B2437aC8Ce61Ee0bC610D617962B214",
 }
 
 COMET_ABI = [
@@ -146,10 +162,9 @@ class CompoundV3Adapter(ProtocolAdapter):
     # Seconds per year for APY calculation
     SECONDS_PER_YEAR = 31536000
 
-    def __init__(self, chain: str = "ethereum", web3: AsyncWeb3 | None = None, comet_address: str | None = None):
+    def __init__(self, chain: str = "ethereum", web3: AsyncWeb3 | None = None, comet_address: str | None = None, market: str = "USDC"):
         self._chain = chain.lower()
-        if self._chain not in COMPOUND_V3_COMET_ADDRESSES:
-            raise ValueError(f"Unsupported chain: {chain}. Supported: {list(COMPOUND_V3_COMET_ADDRESSES.keys())}")
+        self._market = market.upper()
 
         settings = get_settings()
 
@@ -160,11 +175,28 @@ class CompoundV3Adapter(ProtocolAdapter):
             self._web3 = web3
         else:
             self._web3 = AsyncWeb3(
-                AsyncHTTPProvider(rpc_url),
+                AsyncHTTPProvider(
+                    rpc_url,
+                    request_kwargs={"timeout": ClientTimeout(total=15)},
+                ),
                 modules={"eth": (AsyncEth,)},
             )
 
-        self._comet_address = comet_address or COMPOUND_V3_COMET_ADDRESSES[self._chain]
+        # Resolve Comet address from market type
+        market_address_maps = {
+            "USDC": COMPOUND_V3_COMET_ADDRESSES,
+            "WETH": COMPOUND_V3_WETH_COMET_ADDRESSES,
+            "USDT": COMPOUND_V3_USDT_COMET_ADDRESSES,
+        }
+        if comet_address:
+            self._comet_address = comet_address
+        elif self._market in market_address_maps:
+            addr_map = market_address_maps[self._market]
+            if self._chain not in addr_map:
+                raise ValueError(f"No {self._market} market on chain: {chain}")
+            self._comet_address = addr_map[self._chain]
+        else:
+            raise ValueError(f"Unsupported market: {self._market}. Supported: {list(market_address_maps.keys())}")
         self._comet_contract = self._web3.eth.contract(
             address=AsyncWeb3.to_checksum_address(self._comet_address),
             abi=COMET_ABI,
@@ -177,7 +209,9 @@ class CompoundV3Adapter(ProtocolAdapter):
     @property
     def name(self) -> str:
         chain_display = self._chain.capitalize()
-        return f"Compound V3 ({chain_display})"
+        if self._market == "USDC":
+            return f"Compound V3 ({chain_display})"
+        return f"Compound V3 {self._market} ({chain_display})"
 
     @property
     def chain(self) -> str:
@@ -258,17 +292,24 @@ class CompoundV3Adapter(ProtocolAdapter):
         try:
             checksum_address = AsyncWeb3.to_checksum_address(wallet_address)
 
-            # Get borrow balance (in base token - USDC)
+            # Get base token info for proper decimal/price handling
+            base_info = await self._get_base_token_info()
+            base_scale = base_info["scale"]
+            base_price_feed = base_info["price_feed"]
+            base_price = await self._get_price(base_price_feed)
+            base_price_usd = base_price / 1e8
+
+            # Get borrow balance (in base token units)
             borrow_balance = await self._comet_contract.functions.borrowBalanceOf(
                 checksum_address
             ).call()
-            borrow_balance_usd = borrow_balance / 1e6  # USDC has 6 decimals
+            borrow_balance_usd = (borrow_balance / base_scale) * base_price_usd
 
-            # Get supply balance (base token)
+            # Get supply balance (base token units)
             supply_balance = await self._comet_contract.functions.balanceOf(
                 checksum_address
             ).call()
-            supply_balance_usd = supply_balance / 1e6
+            supply_balance_usd = (supply_balance / base_scale) * base_price_usd
 
             # Get collateral balances and calculate total collateral value
             num_assets = await self._get_num_assets()
@@ -516,8 +557,12 @@ class CompoundV3Adapter(ProtocolAdapter):
             return position
 
         except Exception as e:
-            logger.error(f"Error fetching detailed Compound V3 position for {wallet_address}: {e}")
-            return await self.get_position(wallet_address)
+            logger.info(f"Detailed fetch failed for {wallet_address} on {self.name}, falling back to basic: {e}")
+            # Fallback to basic position with error note
+            basic = await self.get_position(wallet_address)
+            if basic:
+                basic.detail_error = f"RPC error: {type(e).__name__}"
+            return basic
 
     async def get_health_factor(self, wallet_address: str) -> float | None:
         position = await self.get_position(wallet_address)
